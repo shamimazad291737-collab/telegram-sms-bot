@@ -551,7 +551,7 @@ def handle_update(update):
                 f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন অথবা সরাসরি উপরের লিংকে ঢুকেও কোড দেখতে পারেন।"
             )
             edit_message(chat_id, message_id, res_text, reply_markup=markup)
-        # REGEX OTP EXTRACTION
+            # REGEX OTP EXTRACTION
     if data.startswith("chk_otp_"):
         phone = data.replace("chk_otp_", "").replace("+", "").strip()
         order = get_order_by_phone(phone)
@@ -574,18 +574,18 @@ def handle_update(update):
             except Exception as e:
                 send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে:</b> {e}")
 
-        # Deposit Selection Events
-        elif data == "dep_bkash":
-            user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}
-            send_message(chat_id, f"💖 <b>bKash Deposit Selected</b>\n\nকত টাকা (BDT) ডিপোজিট করতে চান লিখে পাঠান:\n<i>(রেট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD)</i>", reply_markup=get_back_keyboard())
+    # Deposit Selection Events
+    if data == "dep_bkash":
+        user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}
+        send_message(chat_id, "💖 <b>bKash Deposit Selected</b>")
 
-        elif data == "dep_nagad":
-            user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "NAGAD"}
-            send_message(chat_id, f"🟠 <b>Nagad Deposit Selected</b>\n\nকত টাকা (BDT) ডিপোজিট করতে চান লিখে পাঠান:\n<i>(রেট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD)</i>", reply_markup=get_back_keyboard())
+    elif data == "dep_nagad":
+        user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "NAGAD"}
+        send_message(chat_id, "🟠 <b>Nagad Deposit Selected</b>")
 
-        elif data == "dep_binance":
-            user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BINANCE"}
-            send_message(chat_id, "🟡 <b>Binance Deposit Selected</b>\n\nকত <b>USDT</b> (USD) ডিপোজিট করতে চান লিখে পাঠান:", reply_markup=get_back_keyboard())
+    elif data == "dep_binance":
+        user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BINANCE"}
+        send_message(chat_id, "🟡 <b>Binance Deposit Selected</b>")
 
         # Admin Control Callbacks
         elif data == "admin_set_rate" and user_id == ADMIN_ID:

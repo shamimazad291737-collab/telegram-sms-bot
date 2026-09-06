@@ -530,7 +530,6 @@ def handle_update(update):
                 f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন অথবা সরাসরি উপরের লিংকে ঢুকেও কোড দেখতে পারেন।"
             )
                     edit_message(chat_id, message_id, res_text, reply_markup=markup)
-                    send_message(chat_id, "<b>🏠 মেইন মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
                             # REGEX OTP EXTRACTION
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "").replace("+", "").strip()

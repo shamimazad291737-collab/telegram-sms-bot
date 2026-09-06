@@ -252,7 +252,7 @@ def handle_update(update):
         if user_id in user_states:
             state_data = user_states[user_id]
             
-            # Step 1: Receiving Deposit Amount from User
+            # Step 1: Receiving Deposit Amount
             if isinstance(state_data, dict) and state_data.get("step") == "WAITING_AMOUNT":
                 method = state_data["method"]
                 try:
@@ -295,7 +295,7 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল সংখ্যা লিখুন। (যেমন: 120 বা 5)")
                     return
 
-            # Step 2: Receiving TrxID / Order ID
+            # Step 2: Receiving TrxID
             elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_TRX":
                 method = state_data["method"]
                 amount = state_data["amount"]
@@ -309,7 +309,7 @@ def handle_update(update):
                 send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_keyboard())
                 return
 
-            # Step 3: Receiving Screenshot & Sending Request to Admin
+            # Step 3: Receiving Screenshot
             elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_SCREENSHOT":
                 if "photo" in msg:
                     photo_file_id = msg["photo"][-1]["file_id"]
@@ -353,7 +353,7 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>", reply_markup=get_back_keyboard())
                     return
 
-            # Admin Uploading File via Menu Button
+            # Admin File Upload
             elif is_admin and state_data == "ADMIN_UPLOAD_FILE":
                 if "document" in msg:
                     doc = msg["document"]
@@ -384,7 +384,7 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি সঠিক টেক্সট (.txt / .csv) ফাইল আপলোড করুন।</b>", reply_markup=get_back_keyboard())
                     return
 
-            # Admin Custom Inputting Balance Amount (USD) to Add
+            # Admin Custom Balance Input
             elif isinstance(state_data, str) and state_data.startswith("ADMIN_APPROVE_AMOUNT_"):
                 target_user = int(state_data.replace("ADMIN_APPROVE_AMOUNT_", ""))
                 try:
@@ -397,7 +397,7 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            # Admin Setting Rate State
+            # Admin Rate Change
             elif isinstance(state_data, str) and state_data == "ADMIN_SET_PRICE":
                 try:
                     new_p = float(text)
@@ -408,7 +408,7 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            # Admin Broadcast Message State
+            # Admin Broadcast
             elif isinstance(state_data, str) and state_data == "ADMIN_BROADCAST":
                 all_users = get_all_users()
                 success, failed = 0, 0
@@ -426,7 +426,7 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
- # Main Reply Keyboards
+        # Main Reply Keyboards
         if text == "/start":
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
@@ -492,6 +492,7 @@ def handle_update(update):
         message_id = cb["message"]["message_id"]
         user_id = cb["from"]["id"]
         data = cb.get("data", "")
+        is_admin = (user_id == ADMIN_ID)
 
         try:
             requests.post(BASE_URL + "answerCallbackQuery", data={"callback_query_id": cb_id}, timeout=5)
@@ -527,43 +528,49 @@ def handle_update(update):
                 f"📱 <b>USA Number:</b> <code>{phone}</code>\n"
                 f"🔗 <b>OTP Link:</b> {link}\n"
                 f"💰 <b>ফি কাটা হয়েছে:</b> ${current_price:.2f} USD\n\n"
-                f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন অথবা সরাসরি উপরের লিংকে ঢুকেও কোড দেখতে পারেন।"
+                f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন।"
             )
-            edit_message(chat_id, message_id, res_text, reply_markup=markup)
-        # REGEX OTP EXTRACTION
-        elif data.startswith("chk_otp_"):
-            phone = data.replace("chk_otp_", "").replace("+", "").strip()
-            order = get_order_by_phone(phone)
+            
+            # নম্বর ও ইনলাইন বাটন পাঠানো এবং সাথে সাথে মূল কিবোর্ড ফেরত দেওয়া
+            send_message(chat_id, res_text, reply_markup=markup)
+            send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
+        # FIXED & ENHANCED OTP EXTRACTION
+        elif data.startswith("chk_otp_"):
+            phone = data.replace("chk_otp_", "")
+            order = get_order_by_phone(phone)
+            
             if order:
                 link = order[2]
                 try:
                     headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
                     }
-                    res = requests.get(link, headers=headers, timeout=12)
-                    raw_text = res.text
-
-                    # ৪ থেকে ৮ ডিজিটের যেকোনো ওটিপি বা ড্যাশযুক্ত ওটিপি ধরা
-                    otp_match = re.search(r'\b\d{4,8}\b', raw_text) or re.search(r'\b\d{3}[-\s]\d{3}\b', raw_text)
+                    res = requests.get(link, headers=headers, timeout=10)
+                    raw_text = res.text.strip()
                     
-                    if otp_match:
-                        otp_code = otp_match.group(0)
-                    else:
-                        otp_code = None
+                    # HTML ট্যাগ রিমুভ করে ক্লিন টেক্সট বের করা
+                    clean_text = re.sub(r'<[^>]+>', ' ', raw_text)
+                    
+                    # ৪ থেকে ৮ ডিজিটের কোড খোঁজা
+                    otp_matches = re.findall(r'\b\d{4,8}\b', clean_text)
+                    
+                    # পোর্ট বা ভুল নম্বর ফিল্টার করার লজিক
+                    filtered_otps = [code for code in otp_matches if code not in ['11111', '8028', '1111', '2222', '3333', '4444']]
 
-                    if otp_code:
+                    if filtered_otps:
+                        otp_code = filtered_otps[0]
                         markup = {
                             "inline_keyboard": [
-                                [{"text": "🛒 Buy Another Number", "callback_data": "buy_number"}]
+                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
                             ]
                         }
-                        send_message(chat_id, f"🎂 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                     else:
-                        send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
+                        send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
                 except Exception as e:
-                    send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে: {e}</b>")
-                    
+                    send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> লিঙ্ক থেকে ডেটা আনা যাচ্ছে না।")
+
         # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}
@@ -578,19 +585,19 @@ def handle_update(update):
             send_message(chat_id, "🟡 <b>Binance Deposit Selected</b>\n\nকত <b>USDT</b> (USD) ডিপোজিট করতে চান লিখে পাঠান:", reply_markup=get_back_keyboard())
 
         # Admin Control Callbacks
-        elif data == "admin_set_rate" and user_id == ADMIN_ID:
+        elif data == "admin_set_rate" and is_admin:
             user_states[user_id] = "ADMIN_SET_PRICE"
             send_message(chat_id, f"🏷️ <b>WhatsApp নম্বরের নতুন মূল্য ($ USD) লিখে পাঠান:</b>\n(বর্তমান রেট: ${current_price:.2f} USD)", reply_markup=get_back_keyboard())
 
-        elif data == "admin_broadcast" and user_id == ADMIN_ID:
+        elif data == "admin_broadcast" and is_admin:
             user_states[user_id] = "ADMIN_BROADCAST"
             send_message(chat_id, "📢 <b>সব ইউজারদের উদ্দেশ্যে পাঠানোর বার্তাটি লিখে পাঠান:</b>", reply_markup=get_back_keyboard())
 
-        elif data == "admin_upload_file" and user_id == ADMIN_ID:
+        elif data == "admin_upload_file" and is_admin:
             user_states[user_id] = "ADMIN_UPLOAD_FILE"
             send_message(chat_id, "📁 <b>নম্বর সম্বলিত ফাইলটি (.txt / .csv) এখানে পাঠাও:</b>\nফরম্যাট:\n<code>+1234567890, https://otp-link.com/check</code>", reply_markup=get_back_keyboard())
 
-        elif data == "admin_view_stock" and user_id == ADMIN_ID:
+        elif data == "admin_view_stock" and is_admin:
             stock_items = get_all_stock()
             if not stock_items:
                 send_message(chat_id, "📊 <b>বর্তমানে স্টকে কোনো নম্বর খালি নেই!</b>")
@@ -602,7 +609,7 @@ def handle_update(update):
                     stock_text += f"<i>...এবং আরও {len(stock_items) - 30} টি নম্বর রয়েছে।</i>"
                 send_message(chat_id, stock_text)
 
-        elif data == "admin_delete_stock_confirm" and user_id == ADMIN_ID:
+        elif data == "admin_delete_stock_confirm" and is_admin:
             markup = {
                 "inline_keyboard": [
                     [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]
@@ -610,12 +617,12 @@ def handle_update(update):
             }
             edit_message(chat_id, message_id, "⚠️ <b>আপনি কি নিশ্চিতভাবে সমস্ত স্টক ফাইল/নম্বর মুছে ফেলতে চান?</b>", reply_markup=markup)
 
-        elif data == "admin_delete_stock_execute" and user_id == ADMIN_ID:
+        elif data == "admin_delete_stock_execute" and is_admin:
             clear_all_stock()
             edit_message(chat_id, message_id, "🗑️ <b>সফলভাবে সমস্ত স্টকে থাকা নম্বর ও লিংক ডিলিট করা হয়েছে!</b>")
 
-        # Dynamic Auto Approve with Converted USD Rate
-        elif data.startswith("appusd_") and user_id == ADMIN_ID:
+        # Dynamic Auto Approve
+        elif data.startswith("appusd_") and is_admin:
             parts = data.split("_")
             target_user = int(parts[1])
             usd_val = float(parts[2])
@@ -624,13 +631,13 @@ def handle_update(update):
             send_message(chat_id, f"✅ <b>User ID {target_user}-এর অ্যাকাউন্টে সফলভাবে ${usd_val:.2f} USD যোগ করা হয়েছে!</b>")
             send_message(target_user, f"🎉 <b>আপনার ডিপোজিট প্রসেস সফল হয়েছে! ${usd_val:.2f} USD অ্যাকাউন্টে যোগ করা হয়েছে।</b>")
 
-        # Admin Custom Approval Option
-        elif data.startswith("dep_app_") and user_id == ADMIN_ID:
+        # Admin Custom Approval
+        elif data.startswith("dep_app_") and is_admin:
             target_user = int(data.replace("dep_app_", ""))
             user_states[user_id] = f"ADMIN_APPROVE_AMOUNT_{target_user}"
             send_message(chat_id, f"<b>User ID {target_user}-এর অ্যাকাউন্টে কত $ (USD) যোগ করতে চান লিখে পাঠান:</b>")
 
-        elif data.startswith("dep_rej_") and user_id == ADMIN_ID:
+        elif data.startswith("dep_rej_") and is_admin:
             target_user = int(data.replace("dep_rej_", ""))
             send_message(target_user, f"❌ <b>আপনার জমা দেওয়া ডিপোজিট প্রুফটি সঠিক নয়!</b>\nদয়া করে সঠিক তথ্য দিন বা সাপোর্ট অ্যাডমিনের সাথে কথা বলুন: @{SUPPORT_USERNAME}")
             send_message(chat_id, f"❌ <b>User ID {target_user}-এর ডিপোজিট বাতিল করা হয়েছে।</b>")

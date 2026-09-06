@@ -13,6 +13,11 @@ SUPPORT_USERNAME = os.environ.get("SUPPORT_USERNAME", "telegram")
 
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}/"
 
+# Payment Details Configuration
+BKASH_NUMBER = "01700000000 (Personal)"
+NAGAD_NUMBER = "01700000000 (Personal)"
+BINANCE_PAY_ID = "123456789"
+
 # User states dictionary
 user_states = {}
 
@@ -93,10 +98,28 @@ def handle_update(update):
         add_user(user_id, username)
         is_admin = (user_id == ADMIN_ID)
 
-        # Admin Input Handlers
+        # State Handlers for Input
         if user_id in user_states:
             state = user_states[user_id]
-            if state == "WAITING_ADD_BAL":
+            
+            # User Submitting Transaction Proof
+            if state.startswith("WAITING_TRX_"):
+                method = state.replace("WAITING_TRX_", "")
+                admin_msg = (
+                    f"📥 <b>New Deposit Request ({method})</b>\n\n"
+                    f"👤 <b>User:</b> {html.escape(first_name)} (@{username})\n"
+                    f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
+                    f"📝 <b>Details Sent:</b>\n{html.escape(text)}\n\n"
+                    f"💡 <i>যাচাই করে ব্যালেন্স দিতে ডায়ালগ ব্যবহার করুন:</i>\n"
+                    f"<code>{user_id} AMOUNT</code>"
+                )
+                send_message(ADMIN_ID, admin_msg)
+                send_message(chat_id, "✅ <b>আপনার ডিপোজিট রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে!</b>\nযাচাই করার পর খুব শীঘ্রই ব্যালেন্স যোগ করা হবে।")
+                del user_states[user_id]
+                return
+
+            # Admin Balance Credit Handler
+            elif state == "WAITING_ADD_BAL" and is_admin:
                 try:
                     parts = text.split()
                     target_id = int(parts[0])
@@ -129,14 +152,12 @@ def handle_update(update):
             send_message(chat_id, "<b>কোন সার্ভিসের জন্য নম্বর নিতে চান?</b>", reply_markup=markup)
 
         elif text == "💳 DEPOSIT":
-            dep_text = (
-                "💳 <b>Deposit / Add Balance</b>\n\n"
-                "আমাদের বটের অ্যাকাউন্টে অটোমেটিক রিচার্জ সুবিধা উপলব্ধ।\n"
-                "রিচার্জ করার জন্য অ্যাডমিনের সাথে যোগাযোগ করুন।"
-            )
+            dep_text = "💳 <b>Deposit Options</b>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি নির্বাচন করুন:"
             markup = {
                 "inline_keyboard": [
-                    [{"text": "💬 Contact Admin", "url": f"https://t.me/{SUPPORT_USERNAME}", "style": "success"}]
+                    [{"text": "💖 bKash", "callback_data": "dep_bkash", "style": "danger"}],
+                    [{"text": "🟠 Nagad", "callback_data": "dep_nagad", "style": "primary"}],
+                    [{"text": "🟡 Binance (Crypto)", "callback_data": "dep_binance", "style": "success"}]
                 ]
             }
             send_message(chat_id, dep_text, reply_markup=markup)
@@ -176,7 +197,40 @@ def handle_update(update):
 
         requests.post(BASE_URL + "answerCallbackQuery", data={"callback_query_id": cb_id})
 
-        if data.startswith("get_num_"):
+        if data == "dep_bkash":
+            user_states[user_id] = "WAITING_TRX_BKASH"
+            msg = (
+                f"💖 <b>bKash Personal Deposit</b>\n\n"
+                f"নম্বর: <code>{BKASH_NUMBER}</code>\n\n"
+                f"📌 <b>নিয়মাবলী:</b>\n"
+                f"১. উপরের নম্বরে টাকা Send Money করুন।\n"
+                f"২. টাকা পাঠানোর পর আপনার bKash নম্বর এবং <b>TrxID</b> এখানে মেসেজ পাঠোন।"
+            )
+            send_message(chat_id, msg)
+
+        elif data == "dep_nagad":
+            user_states[user_id] = "WAITING_TRX_NAGAD"
+            msg = (
+                f"🟠 <b>Nagad Personal Deposit</b>\n\n"
+                f"নম্বর: <code>{NAGAD_NUMBER}</code>\n\n"
+                f"📌 <b>নিয়মাবলী:</b>\n"
+                f"১. উপরের নম্বরে টাকা Send Money করুন।\n"
+                f"২. টাকা পাঠানোর পর আপনার Nagad নম্বর এবং <b>TrxID</b> এখানে মেসেজ পাঠোন।"
+            )
+            send_message(chat_id, msg)
+
+        elif data == "dep_binance":
+            user_states[user_id] = "WAITING_TRX_BINANCE"
+            msg = (
+                f"🟡 <b>Binance Pay Deposit</b>\n\n"
+                f"Binance Pay ID: <code>{BINANCE_PAY_ID}</code>\n\n"
+                f"📌 <b>নিয়মাবলী:</b>\n"
+                f"১. উপরের Pay ID-তে USDT পাঠান।\n"
+                f"২. পাঠানোর পর আপনার <b>Pay ID/Order ID</b> এবং কত USDT পাঠিয়েছেন তা মেসেজ লিখে পাঠান।"
+            )
+            send_message(chat_id, msg)
+
+        elif data.startswith("get_num_"):
             service = data.replace("get_num_", "").upper()
             send_message(chat_id, f"📱 <b>{service} Number Allocated:</b>\n<code>+8801700000000</code>\n\n<i>Waiting for OTP...</i>")
 
@@ -212,7 +266,7 @@ if __name__ == "__main__":
     # Thread for Render Port Binding
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot is running with Bot API 8.4 Styling Features...")
+    print("🚀 Bot is running with Bot API 8.4 & Multi-payment Support...")
     offset = 0
     while True:
         try:
@@ -223,4 +277,4 @@ if __name__ == "__main__":
                     threading.Thread(target=handle_update, args=(update,), daemon=True).start()
         except Exception:
             time.sleep(2)
-    
+            

@@ -568,24 +568,23 @@ def handle_update(update):
 
                     # ৪ থেকে ৮ ডিজিটের যেকোনো ওটিপি বা ড্যাশযুক্ত ওটিপি ধরা
                     otp_match = re.search(r'\b\d{4,8}\b', raw_text) or re.search(r'\b\d{3}[-\s]\d{3}\b', raw_text)
+                if otp_match:
+                    otp_code = otp_match.group(0)
+                else:
+                    otp_code = None
+
+                if otp_code:
+                    markup = {
+                        "inline_keyboard": [
+                            [{"text": "🛒 Buy Another Number", "callback_data": "buy_number"}]
+                        ]
+                    }
+                    send_message(chat_id, f"🎂 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                    GROUP_CHAT_ID = "-100396861153"
+                    send_message(GROUP_CHAT_ID, f"🔔 <b>New OTP Received!</b>\n📱 Phone: <code>{phone}</code>\n🔑 OTP: <code>{otp_code}</code>")
+                else:
+                    send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
                     
-                    if otp_match:
-                        otp_code = otp_match.group(0)
-                    else:
-                        otp_code = None
-
-                                        if otp_code:
-                        markup = {
-                            "inline_keyboard": [
-                                [{"text": "🛒 Buy Another Number", "callback_data": "buy_number"}]
-                            ]
-                        }
-                        send_message(chat_id, f"🎂 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
-                        GROUP_CHAT_ID = "-100396861153"
-                        send_message(GROUP_CHAT_ID, f"🔔 <b>New OTP Received!</b>\n📱 Phone: <code>{phone}</code>\n🔑 OTP: <code>{otp_code}</code>")
-
-                    else:
-                        send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
                 except Exception as e:
                     send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে: {e}</b>")
                     

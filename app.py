@@ -544,7 +544,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # ACCURATE 6-DIGIT OTP EXTRACTION
+        # ADVANCED OTP EXTRACTION
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -556,12 +556,17 @@ def handle_update(update):
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
                     }
                     res = requests.get(link, headers=headers, timeout=10)
-                    raw_text = res.text.strip()
+                    raw_text = res.text
                     
-                    # HTML ট্যাগ বাদ দিয়ে নির্দিষ্ট করে ৬ ডিজিট OTP বের করা
-                    clean_text = re.sub(r'<[^>]+>', ' ', raw_text)
+                    # HTML and Script Tag Cleansing
+                    clean_text = re.sub(r'<script.*?>.*?</script>', '', raw_text, flags=re.DOTALL)
+                    clean_text = re.sub(r'<[^>]+>', ' ', clean_text)
+                    
+                    # Search 6 digit patterns
                     otp_matches = re.findall(r'\b\d{6}\b', clean_text)
-                    filtered_otps = [code for code in otp_matches if code not in ['111111', '000000', '123456']]
+                    
+                    # Filter out non-OTP 6 digit numbers
+                    filtered_otps = [code for code in otp_matches if code not in ['111111', '000000', '123456', '169582']]
 
                     if filtered_otps:
                         otp_code = filtered_otps[0]
@@ -571,10 +576,8 @@ def handle_update(update):
                             ]
                         }
                         
-                        # ইউজারকে OTP প্রদান
                         send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                         
-                        # OTP গ্রুপে স্বয়ংক্রিয়ভাবে ফরওয়ার্ড করা
                         if OTP_GROUP_ID:
                             group_msg = (
                                 f"🎉 <b>New OTP Received!</b>\n\n"

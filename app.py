@@ -81,6 +81,21 @@ def get_all_users():
     conn.close()
     return [r[0] for r in rows]
 
+def get_all_stock():
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, phone_number, otp_link FROM stock")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def clear_all_stock():
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM stock")
+    conn.commit()
+    conn.close()
+
 def get_user(user_id):
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
@@ -220,29 +235,34 @@ def handle_update(update):
             send_message(chat_id, "<b>মূল মেনুতে ফিরে আসা হয়েছে:</b>", reply_markup=get_main_keyboard(is_admin))
             return
 
-        # Admin File Uploading for Stock
-        if is_admin and "document" in msg:
-            doc = msg["document"]
-            file_id = doc["file_id"]
-            file_info = requests.get(BASE_URL + f"getFile?file_id={file_id}").json()
-            if file_info.get("ok"):
-                file_path = file_info["result"]["file_path"]
-                content = requests.get(f"https://api.telegram.org/file/bot{TOKEN}/{file_path}").text
-                
-                count = 0
-                for line in content.splitlines():
-                    if "," in line or " " in line:
-                        parts = line.replace(",", " ").split()
-                        if len(parts) >= 2:
-                            add_stock_item(parts[0].strip(), parts[1].strip())
-                            count += 1
-                send_message(chat_id, f"✅ <b>সফলভাবে {count} টি নম্বর স্টকে আপলোড করা হয়েছে!</b>")
-                return
-
         # Input State Handling
         if user_id in user_states:
             state_data = user_states[user_id]
             
+            # Admin Uploading File via Menu Button
+            if is_admin and state_data == "ADMIN_UPLOAD_FILE":
+                if "document" in msg:
+                    doc = msg["document"]
+                    file_id = doc["file_id"]
+                    file_info = requests.get(BASE_URL + f"getFile?file_id={file_id}").json()
+                    if file_info.get("ok"):
+                        file_path = file_info["result"]["file_path"]
+                        content = requests.get(f"https://api.telegram.org/file/bot{TOKEN}/{file_path}").text
+                        
+                        count = 0
+                        for line in content.splitlines():
+                            if "," in line or " " in line:
+                                parts = line.replace(",", " ").split()
+                                if len(parts) >= 2:
+                                    add_stock_item(parts[0].strip(), parts[1].strip())
+                                    count += 1
+                        send_message(chat_id, f"✅ <b>সফলভাবে {count} টি নম্বর স্টকে আপলোড করা হয়েছে!</b>", reply_markup=get_main_keyboard(is_admin))
+                        del user_states[user_id]
+                        return
+                else:
+                    send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি ফাইল (.txt / .csv) আপলোড করুন।</b>", reply_markup=get_back_keyboard())
+                    return
+
             # Step 1: Receiving TrxID / Order ID
             if isinstance(state_data, str) and state_data.startswith("WAITING_TRX_"):
                 method = state_data.replace("WAITING_TRX_", "")
@@ -335,10 +355,10 @@ def handle_update(update):
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🟢 WhatsApp Number (${current_price})", "callback_data": "menu_wa", "style": "success"}]
+                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price})", "callback_data": "confirm_buy_usa", "style": "danger"}]
                 ]
             }
-            send_message(chat_id, "<b>কোন প্ল্যাটফর্মের জন্য নম্বর নিতে চান?</b>", reply_markup=get_back_keyboard())
+            send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price} / Number</b>", reply_markup=get_back_keyboard())
             send_message(chat_id, "সার্ভিস অপশন:", reply_markup=markup)
 
         elif text == "💳 DEPOSIT":
@@ -371,15 +391,15 @@ def handle_update(update):
         elif text == "⚙️ ADMIN PANEL" and is_admin:
             msg = (
                 "<b>⚙️ ADMIN PANEL</b>\n\n"
-                f"💰 <b>WhatsApp Number Price:</b> ${current_price}\n\n"
-                "📂 <b>নম্বর ফাইল আপলোড:</b>\n"
-                "সরাসরি ফাইল পাঠালে নম্বর স্টকে যোগ হয়ে যাবে।\n"
-                "ফরম্যাট: <code>+1234567890, https://otp-link.com/check</code>"
+                f"💰 <b>WhatsApp Number Price:</b> ${current_price}"
             )
             markup = {
                 "inline_keyboard": [
                     [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
-                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "danger"}]
+                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "danger"}],
+                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "success"}],
+                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
+                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm", "style": "danger"}]
                 ]
             }
             send_message(chat_id, msg, reply_markup=get_back_keyboard())
@@ -397,16 +417,7 @@ def handle_update(update):
 
         current_price = get_number_price()
 
-        # Dynamic Single Popup Message Flow
-        if data == "menu_wa":
-            markup = {
-                "inline_keyboard": [
-                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price})", "callback_data": "confirm_buy_usa", "style": "danger"}]
-                ]
-            }
-            edit_message(chat_id, message_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price} / Number</b>", reply_markup=markup)
-
-        elif data == "confirm_buy_usa":
+        if data == "confirm_buy_usa":
             u_info = get_user(user_id)
             bal = u_info[2] if u_info else 0.0
 
@@ -457,7 +468,7 @@ def handle_update(update):
                 except Exception:
                     send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
 
-        # Deposit Selection Events
+         # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = "WAITING_TRX_BKASH"
             edit_message(chat_id, message_id, f"💖 <b>bKash Send Money:</b> <code>{BKASH_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে মেসেজ করুন:")
@@ -478,6 +489,34 @@ def handle_update(update):
         elif data == "admin_broadcast" and user_id == ADMIN_ID:
             user_states[user_id] = "ADMIN_BROADCAST"
             send_message(chat_id, "📢 <b>সব ইউজারদের উদ্দেশ্যে পাঠানোর বার্তাটি লিখে পাঠান:</b>", reply_markup=get_back_keyboard())
+
+        elif data == "admin_upload_file" and user_id == ADMIN_ID:
+            user_states[user_id] = "ADMIN_UPLOAD_FILE"
+            send_message(chat_id, "📁 <b>নম্বর সম্বলিত ফাইলটি (.txt / .csv) এখানে পাঠাও:</b>\nফরম্যাট:\n<code>+1234567890, https://otp-link.com/check</code>", reply_markup=get_back_keyboard())
+
+        elif data == "admin_view_stock" and user_id == ADMIN_ID:
+            stock_items = get_all_stock()
+            if not stock_items:
+                send_message(chat_id, "📊 <b>বর্তমানে স্টকে কোনো নম্বর খালি নেই!</b>")
+            else:
+                stock_text = f"📊 <b>বর্তমান স্টকে থাকা নম্বরসমূহ (মোট: {len(stock_items)} টি):</b>\n\n"
+                for item in stock_items[:30]:  # Limit display to first 30 items
+                    stock_text += f"📱 <code>{item[1]}</code>\n🔗 {item[2]}\n\n"
+                if len(stock_items) > 30:
+                    stock_text += f"<i>...এবং আরও {len(stock_items) - 30} টি নম্বর রয়েছে।</i>"
+                send_message(chat_id, stock_text)
+
+        elif data == "admin_delete_stock_confirm" and user_id == ADMIN_ID:
+            markup = {
+                "inline_keyboard": [
+                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]
+                ]
+            }
+            edit_message(chat_id, message_id, "⚠️ <b>আপনি কি নিশ্চিতভাবে সমস্ত স্টক ফাইল/নম্বর মুছে ফেলতে চান?</b>", reply_markup=markup)
+
+        elif data == "admin_delete_stock_execute" and user_id == ADMIN_ID:
+            clear_all_stock()
+            edit_message(chat_id, message_id, "🗑️ <b>সফলভাবে সমস্ত স্টকে থাকা নম্বর ও লিংক ডিলিট করা হয়েছে!</b>")
 
         # Admin Approval Handlers
         elif data.startswith("dep_app_"):
@@ -506,7 +545,7 @@ if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot Engine Online with Admin Rate Customization & Broadcast Feature...")
+    print("🚀 Bot Engine Online with Full Stock Clear Support...")
     offset = 0
     while True:
         try:

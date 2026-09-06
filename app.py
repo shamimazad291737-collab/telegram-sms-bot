@@ -552,7 +552,7 @@ def handle_update(update):
             )
             edit_message(chat_id, message_id, res_text, reply_markup=markup)
 
-        # REGEX OTP EXTRACTION
+                # REGEX OTP EXTRACTION
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "").replace("+", "").strip()
             order = get_order_by_phone(phone)
@@ -566,31 +566,26 @@ def handle_update(update):
                     res = requests.get(link, headers=headers, timeout=12)
                     raw_text = res.text
 
-                    # HTML Tag সরিয়ে স্পেস দেওয়া
-                    clean_text = re.sub(r'<[^>]+>', ' ', raw_text)
-
-                    # ৬ ডিজিটের OTP খোঁজা
-                    otp_match = re.search(r'\b(\d{6})\b', clean_text)
-                    if not otp_match:
-                        otp_match_dash = re.search(r'\b(\d{3})[- ](\d{3})\b', clean_text)
-                        if otp_match_dash:
-                            otp_code = f"{otp_match_dash.group(1)}{otp_match_dash.group(2)}"
-                        else:
-                            otp_code = None
+                    # ৪ থেকে ৮ ডিজিটের যেকোনো ওটিপি বা ড্যাশযুক্ত ওটিপি ধরা
+                    otp_match = re.search(r'\b\d{4,8}\b', raw_text) or re.search(r'\b\d{3}[-\s]\d{3}\b', raw_text)
+                    
+                    if otp_match:
+                        otp_code = otp_match.group(0)
                     else:
-                        otp_code = otp_match.group(1)
+                        otp_code = None
 
                     if otp_code:
                         markup = {
                             "inline_keyboard": [
-                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
+                                [{"text": "🛒 Buy Another Number", "callback_data": "buy_number"}]
                             ]
                         }
-                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                        send_message(chat_id, f"🎂 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                     else:
-                        send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> নম্বরটি অ্যাপে বসিয়ে কিছুক্ষণ পর আবার Check OTP চাপুন।")
+                        send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
                 except Exception as e:
-                    send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b>\nএরর: {e}")
+                    send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে: {e}</b>")
+                    
             else:
                 send_message(chat_id, "❌ <b>অর্ডার সম্পর্কিত তথ্য খুঁজে পাওয়া যায়নি!</b>")
         # Deposit Selection Events

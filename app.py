@@ -517,9 +517,10 @@ def handle_update(update):
             deduct_balance(user_id, current_price)
             save_active_order(user_id, phone, link)
 
+                        clean_phone = phone.replace("+", "")
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}],
+                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{clean_phone}", "style": "success"}],
                     [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                 ]
             }
@@ -536,27 +537,44 @@ def handle_update(update):
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
-            
+
             if order:
                 link = order[2]
                 try:
-                    res = requests.get(link, timeout=10)
-                    raw_text = res.text.strip()
-                    
-                    otp_match = re.search(r'\b\d{6}\b', raw_text)
-                    
-                    if otp_match:
-                        otp_code = otp_match.group(0)
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+                    }
+                    res = requests.get(link, headers=headers, timeout=12)
+                    raw_html = res.text
+
+                    # HTML Tag সরিয়ে প্লেন টেক্সট বের করা
+                    clean_text = re.sub(r'<[^>]+>', ' ', raw_html)
+
+                    # ৬ ডিজিট এর OTP খোঁজা
+                    otp_match = re.search(r'\b(\d{6})\b', clean_text)
+                    if not otp_match:
+                        otp_match_dash = re.search(r'\b(\d{3})[- ](\d{3})\b', clean_text)
+                        if otp_match_dash:
+                            otp_code = f"{otp_match_dash.group(1)}{otp_match_dash.group(2)}"
+                        else:
+                            otp_code = None
+                    else:
+                        otp_code = otp_match.group(1)
+
+                    if otp_code:
                         markup = {
                             "inline_keyboard": [
-                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
+                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                             ]
                         }
                         send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                        
                     else:
                         send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
-                except Exception:
-                    send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
+                except Exception as e:
+                    send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b>\nএরর: {e}")
+            else:
+                send_message(chat_id, "❌ <b>অর্ডার সম্পর্কিত তথ্য খুঁজে পাওয়া যায়নি!</b>")
 
         # Deposit Selection Events
         elif data == "dep_bkash":

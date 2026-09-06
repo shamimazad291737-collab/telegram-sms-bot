@@ -5,6 +5,8 @@ import html
 import threading
 import time
 import re
+import trace
+import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Environment Variables
@@ -207,21 +209,21 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
 def get_main_keyboard(is_admin=False):
     kb = [
         [
-            {"text": "🛒 BUY NUMBER"},
-            {"text": "💳 DEPOSIT"}
+            {"text": "ðŸ›’ BUY NUMBER", "style": "primary"},
+            {"text": "ðŸ’³ DEPOSIT", "style": "success"}
         ],
         [
-            {"text": "👤 PROFILE"},
-            {"text": "🎧 SUPPORT"}
+            {"text": "ðŸ‘¤ PROFILE", "style": "primary"},
+            {"text": "ðŸŽ§ SUPPORT", "style": "primary"}
         ]
     ]
     if is_admin:
-        kb.append([{"text": "⚙️ ADMIN PANEL"}])
+        kb.append([{"text": "âš™ï¸ ADMIN PANEL", "style": "danger"}])
     return {"keyboard": kb, "resize_keyboard": True}
 
 def get_back_keyboard():
     kb = [
-        [{"text": "⬅️ Back"}]
+        [{"text": "â¬…ï¸ Back", "style": "danger"}]
     ]
     return {"keyboard": kb, "resize_keyboard": True}
 
@@ -240,10 +242,10 @@ def handle_update(update):
         current_price = get_number_price()
 
         # Handle Back Button Globally
-        if text in ["⬅️ Back", "🔙 Back", "/start"]:
+        if text in ["â¬…ï¸ Back", "ðŸ”™ Back"]:
             if user_id in user_states:
                 del user_states[user_id]
-            send_message(chat_id, "<b>মূল মেনুতে ফিরে আসা হয়েছে:</b>", reply_markup=get_main_keyboard(is_admin))
+            send_message(chat_id, "<b>à¦®à§‚à¦² à¦®à§‡à¦¨à§à¦¤à§‡ à¦«à¦¿à¦°à§‡ à¦†à¦¸à¦¾ à¦¹à§Ÿà§‡à¦›à§‡:</b>", reply_markup=get_main_keyboard(is_admin))
             return
 
         # Input State Handling
@@ -256,7 +258,7 @@ def handle_update(update):
                 try:
                     amount = float(text)
                     if amount <= 0:
-                        send_message(chat_id, "❌ <b>সঠিক পরিমাণ উল্লেখ করুন!</b>")
+                        send_message(chat_id, "âŒ <b>à¦¸à¦ à¦¿à¦• à¦ªà¦°à¦¿à¦®à¦¾à¦£ à¦‰à¦²à§à¦²à§‡à¦– à¦•à¦°à§à¦¨!</b>")
                         return
                     
                     user_states[user_id] = {
@@ -265,33 +267,32 @@ def handle_update(update):
                         "amount": amount
                     }
 
-                    msg_text = ""
                     if method == "BKASH":
                         msg_text = (
-                            f"💖 <b>bKash Send Money</b>\n\n"
-                            f"💵 <b>ডিপোজিট পরিমাণ:</b> ৳{amount:.2f} BDT\n"
-                            f"📱 <b>bKash Number:</b> <code>{BKASH_NUMBER}</code>\n\n"
-                            f"উপরের নম্বরে টাকা পাঠানোর পর আপনার <b>TrxID</b> এখানে লিখে পাঠান:"
+                            f"ðŸ’– <b>bKash Send Money</b>\n\n"
+                            f"ðŸ’µ <b>à¦¡à¦¿à¦ªà§‹à¦œà¦¿à¦Ÿ à¦ªà¦°à¦¿à¦®à¦¾à¦£:</b> à§³{amount:.2f} BDT\n"
+                            f"ðŸ“± <b>bKash Number:</b> <code>{BKASH_NUMBER}</code>\n\n"
+                            f"à¦‰à¦ªà¦°à§‡à¦° à¦¨à¦®à§à¦¬à¦°à§‡ à¦Ÿà¦¾à¦•à¦¾ à¦ªà¦¾à¦ à¦¾à¦¨à§‹à¦° à¦ªà¦° à¦†à¦ªà¦¨à¦¾à¦° <b>TrxID</b> à¦à¦–à¦¾à¦¨à§‡ à¦²à¦¿à¦–à§‡ à¦ªà¦¾à¦ à¦¾à¦¨:"
                         )
                     elif method == "NAGAD":
                         msg_text = (
-                            f"🟠 <b>Nagad Send Money</b>\n\n"
-                            f"💵 <b>ডিপোজিট পরিমাণ:</b> ৳{amount:.2f} BDT\n"
-                            f"📱 <b>Nagad Number:</b> <code>{NAGAD_NUMBER}</code>\n\n"
-                            f"উপরের নম্বরে টাকা পাঠানোর পর আপনার <b>TrxID</b> এখানে লিখে পাঠান:"
+                            f"ðŸŸ  <b>Nagad Send Money</b>\n\n"
+                            f"ðŸ’µ <b>à¦¡à¦¿à¦ªà§‹à¦œà¦¿à¦Ÿ à¦ªà¦°à¦¿à¦®à¦¾à¦£:</b> à§³{amount:.2f} BDT\n"
+                            f"ðŸ“± <b>Nagad Number:</b> <code>{NAGAD_NUMBER}</code>\n\n"
+                            f"à¦‰à¦ªà¦°à§‡à¦° à¦¨à¦®à§à¦¬à¦°à§‡ à¦Ÿà¦¾à¦•à¦¾ à¦ªà¦¾à¦ à¦¾à¦¨à§‹à¦° à¦ªà¦° à¦†à¦ªà¦¨à¦¾à¦° <b>TrxID</b> à¦à¦–à¦¾à¦¨à§‡ à¦²à¦¿à¦–à§‡ à¦ªà¦¾à¦ à¦¾à¦¨:"
                         )
                     elif method == "BINANCE":
                         msg_text = (
-                            f"🟡 <b>Binance Pay (Crypto)</b>\n\n"
-                            f"💵 <b>ডিপোজিট পরিমাণ:</b> {amount:.2f} USDT\n"
-                            f"🆔 <b>Binance Pay ID:</b> <code>{BINANCE_PAY_ID}</code>\n\n"
-                            f"উপরের আইডি তে USDT পাঠানোর পর আপনার <b>Binance Order ID / TrxID</b> মেসেজ লিখে পাঠান:"
+                            f"ðŸŸ¡ <b>Binance Pay (Crypto)</b>\n\n"
+                            f"ðŸ’µ <b>à¦¡à¦¿à¦ªà§‹à¦œà¦¿à¦Ÿ à¦ªà¦°à¦¿à¦®à¦¾à¦£:</b> {amount:.2f} USDT\n"
+                            f"ðŸ†” <b>Binance Pay ID:</b> <code>{BINANCE_PAY_ID}</code>\n\n"
+                            f"à¦‰à¦ªà¦°à§‡à¦° à¦†à¦‡à¦¡à¦¿ à¦¤à§‡ USDT à¦ªà¦¾à¦ à¦¾à¦¨à§‹à¦° à¦ªà¦° à¦†à¦ªà¦¨à¦¾à¦° <b>Binance Order ID / TrxID</b> à¦®à§‡à¦¸à§‡à¦œ à¦²à¦¿à¦–à§‡ à¦ªà¦¾à¦ à¦¾à¦¨:"
                         )
 
                     send_message(chat_id, msg_text, reply_markup=get_back_keyboard())
                     return
                 except ValueError:
-                    send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল সংখ্যা লিখুন। (যেমন: 120 বা 5)")
+                    send_message(chat_id, "âŒ <b>à¦­à§à¦² à¦‡à¦¨à¦ªà§à¦Ÿ!</b> à¦•à§‡à¦¬à¦² à¦¸à¦‚à¦–à§à¦¯à¦¾ à¦²à¦¿à¦–à§à¦¨à¥¤ (à¦¯à§‡à¦®à¦¨: 120 à¦¬à¦¾ 5)")
                     return
 
             # Step 2: Receiving TrxID / Order ID
@@ -305,7 +306,7 @@ def handle_update(update):
                     "amount": amount,
                     "trx_id": text
                 }
-                send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_keyboard())
+                send_message(chat_id, "ðŸ“¸ <b>à¦§à¦¨à§à¦¯à¦¬à¦¾à¦¦! à¦à¦¬à¦¾à¦° à¦ªà§‡à¦®à§‡à¦¨à§à¦Ÿà§‡à¦° à¦à¦•à¦Ÿà¦¿ à¦¸à§à¦ªà¦·à§à¦Ÿ à¦¸à§à¦•à§à¦°à¦¿à¦¨à¦¶à¦Ÿ (Photo) à¦ªà¦¾à¦ à¦¾à¦¨:</b>", reply_markup=get_back_keyboard())
                 return
 
             # Step 3: Receiving Screenshot & Sending Request to Admin
@@ -321,74 +322,36 @@ def handle_update(update):
                         amount_info = f"{amount:.2f} USDT"
                     else:
                         converted_usd = round(amount / BDT_PER_USD, 2)
-                        amount_info = f"৳{amount:.2f} BDT (Estimated: ${converted_usd:.2f} USD @ 120 BDT/$)"
+                        amount_info = f"à§³{amount:.2f} BDT (Estimated: ${converted_usd:.2f} USD @ 120 BDT/$)"
 
                     usd_str_clean = f"{converted_usd:.2f}"
                     admin_markup = {
                         "inline_keyboard": [
                             [
-                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}"},
-                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}"}
+                                {"text": f"âœ… Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}", "style": "success"},
+                                {"text": "âœï¸ Custom Amount", "callback_data": f"dep_app_{user_id}", "style": "primary"}
                             ],
                             [
-                                {"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}"}
+                                {"text": "âŒ Reject Request", "callback_data": f"dep_rej_{user_id}", "style": "danger"}
                             ]
                         ]
                     }
                     admin_caption = (
-                        f"📥 <b>New Deposit Request ({method})</b>\n\n"
-                        f"👤 <b>User:</b> {html.escape(first_name)} (@{username})\n"
-                        f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-                        f"💰 <b>Payment:</b> {amount_info}\n"
-                        f"🧾 <b>TrxID / Order ID:</b> <code>{html.escape(trx_id)}</code>\n\n"
-                        f"যাচাই করে ডলারে যোগ করতে নিচের বাটন প্রেস করুন:"
+                        f"ðŸ“¥ <b>New Deposit Request ({method})</b>\n\n"
+                        f"ðŸ‘¤ <b>User:</b> {html.escape(first_name)} (@{username})\n"
+                        f"ðŸ†” <b>User ID:</b> <code>{user_id}</code>\n"
+                        f"ðŸ’° <b>Payment:</b> {amount_info}\n"
+                        f"ðŸ§¾ <b>TrxID / Order ID:</b> <code>{html.escape(trx_id)}</code>\n\n"
+                        f"à¦¯à¦¾à¦šà¦¾à¦‡ à¦•à¦°à§‡ à¦¡à¦²à¦¾à¦°à§‡ à¦¯à§‹à¦— à¦•à¦°à¦¤à§‡ à¦¨à¦¿à¦šà§‡à¦° à¦¬à¦¾à¦Ÿà¦¨ à¦ªà§à¦°à§‡à¦¸ à¦•à¦°à§à¦¨:"
                     )
                     
                     send_photo_to_admin(ADMIN_ID, photo_file_id, admin_caption, reply_markup=admin_markup)
-                    send_message(chat_id, "✅ <b>আপনার তথ্য ও স্ক্রিনশট অ্যাডমিনের কাছে পাঠানো হয়েছে!</b>\nযাচাই করার পর অ্যাকাউন্টে ডলার ব্যালেন্স যোগ করা হবে।", reply_markup=get_main_keyboard(is_admin))
+                    send_message(chat_id, "âœ… <b>à¦†à¦ªà¦¨à¦¾à¦° à¦¤à¦¥à§à¦¯ à¦“ à¦¸à§à¦•à§à¦°à¦¿à¦¨à¦¶à¦Ÿ à¦…à§à¦¯à¦¾à¦¡à¦®à¦¿à¦¨à§‡à¦° à¦•à¦¾à¦›à§‡ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡!</b>\nà¦¯à¦¾à¦šà¦¾à¦‡ à¦•à¦°à¦¾à¦° à¦ªà¦° à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿà§‡ à¦¡à¦²à¦¾à¦° à¦¬à§à¦¯à¦¾à¦²à§‡à¦¨à§à¦¸ à¦¯à§‹à¦— à¦•à¦°à¦¾ à¦¹à¦¬à§‡à¥¤", reply_markup=get_main_keyboard(is_admin))
                     del user_states[user_id]
                     return
                 else:
-                    send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>", reply_markup=get_back_keyboard())
+                    send_message(chat_id, "âŒ <b>à¦…à¦¨à§à¦—à§à¦°à¦¹ à¦•à¦°à§‡ à¦ªà§‡à¦®à§‡à¦¨à§à¦Ÿà§‡à¦° à¦à¦•à¦Ÿà¦¿ à¦›à¦¬à¦¿/à¦¸à§à¦•à§à¦°à¦¿à¦¨à¦¶à¦Ÿ à¦ªà¦¾à¦ à¦¾à¦¨à¥¤</b>", reply_markup=get_back_keyboard())
                     return
-
-            # Admin Setting Number Rate
-            elif is_admin and state_data == "ADMIN_SET_PRICE":
-                try:
-                    new_p = float(text)
-                    set_number_price(new_p)
-                    del user_states[user_id]
-                    send_message(chat_id, f"✅ <b>সফলভাবে নতুন প্রাইস সেট করা হয়েছে: ${new_p:.2f} USD</b>", reply_markup=get_main_keyboard(is_admin))
-                except ValueError:
-                    send_message(chat_id, "❌ <b>সঠিক প্রাইস লিখুন (যেমন: 0.10):</b>")
-                return
-
-            # Admin Broadcast
-            elif is_admin and state_data == "ADMIN_BROADCAST":
-                del user_states[user_id]
-                all_users = get_all_users()
-                cnt = 0
-                for uid in all_users:
-                    try:
-                        send_message(uid, f"📢 <b>ADMIN ANNOUNCEMENT:</b>\n\n{text}")
-                        cnt += 1
-                    except Exception:
-                        pass
-                send_message(chat_id, f"✅ <b>{cnt} জন ইউজারের কাছে নোটিশ পাঠানো হয়েছে!</b>", reply_markup=get_main_keyboard(is_admin))
-                return
-
-            # Admin Custom Deposit Approve
-            elif is_admin and isinstance(state_data, str) and state_data.startswith("ADMIN_APPROVE_AMOUNT_"):
-                target_user = int(state_data.replace("ADMIN_APPROVE_AMOUNT_", ""))
-                try:
-                    cust_usd = float(text)
-                    update_balance(target_user, cust_usd)
-                    del user_states[user_id]
-                    send_message(chat_id, f"✅ <b>User ID {target_user}-এর একাউন্টে ${cust_usd:.2f} USD যোগ করা হয়েছে।</b>", reply_markup=get_main_keyboard(is_admin))
-                    send_message(target_user, f"🎉 <b>আপনার ডিপোজিট প্রসেস সফল হয়েছে! ${cust_usd:.2f} USD অ্যাকাউন্টে যোগ করা হয়েছে।</b>")
-                except ValueError:
-                    send_message(chat_id, "❌ <b>সঠিক ডলার সংখ্যা লিখুন (যেমন: 1.50):</b>")
-                return
 
             # Admin Uploading File via Menu Button
             elif is_admin and state_data == "ADMIN_UPLOAD_FILE":
@@ -396,7 +359,7 @@ def handle_update(update):
                     doc = msg["document"]
                     file_name = doc.get("file_name", "").lower()
                     if not (file_name.endswith(".txt") or file_name.endswith(".csv")):
-                        send_message(chat_id, "❌ <b>দয়া করে শুধুমাত্র .txt অথবা .csv ফাইল আপলোড করুন!</b>", reply_markup=get_back_keyboard())
+                        send_message(chat_id, "âŒ <b>à¦¦à§Ÿà¦¾ à¦•à¦°à§‡ à¦¶à§à¦§à§à¦®à¦¾à¦¤à§à¦° .txt à¦…à¦¥à¦¬à¦¾ .csv à¦«à¦¾à¦‡à¦² à¦†à¦ªà¦²à§‹à¦¡ à¦•à¦°à§à¦¨!</b>", reply_markup=get_back_keyboard())
                         return
 
                     file_id = doc["file_id"]
@@ -414,59 +377,114 @@ def handle_update(update):
                                     add_stock_item(parts[0].strip(), parts[1].strip())
                                     count += 1
                         
-                        send_message(chat_id, f"✅ <b>সফলভাবে {count} টি নম্বর স্টকে আপলোড করা হয়েছে!</b>", reply_markup=get_main_keyboard(is_admin))
+                        send_message(chat_id, f"âœ… <b>à¦¸à¦«à¦²à¦­à¦¾à¦¬à§‡ {count} à¦Ÿà¦¿ à¦¨à¦®à§à¦¬à¦° à¦¸à§à¦Ÿà¦•à§‡ à¦†à¦ªà¦²à§‹à¦¡ à¦•à¦°à¦¾ à¦¹à§Ÿà§‡à¦›à§‡!</b>", reply_markup=get_main_keyboard(is_admin))
                         del user_states[user_id]
                         return
                 else:
-                    send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি সঠিক টেক্সট (.txt / .csv) ফাইল আপলোড করুন।</b>", reply_markup=get_back_keyboard())
+                    send_message(chat_id, "âŒ <b>à¦…à¦¨à§à¦—à§à¦°à¦¹ à¦•à¦°à§‡ à¦à¦•à¦Ÿà¦¿ à¦¸à¦ à¦¿à¦• à¦Ÿà§‡à¦•à§à¦¸à¦Ÿ (.txt / .csv) à¦«à¦¾à¦‡à¦² à¦†à¦ªà¦²à§‹à¦¡ à¦•à¦°à§à¦¨à¥¤</b>", reply_markup=get_back_keyboard())
                     return
 
-        # --- KEYBOARD COMMANDS ---
-        if text == "🛒 BUY NUMBER":
+            # Admin Custom Inputting Balance Amount (USD) to Add
+            elif isinstance(state_data, str) and state_data.startswith("ADMIN_APPROVE_AMOUNT_"):
+                target_user = int(state_data.replace("ADMIN_APPROVE_AMOUNT_", ""))
+                try:
+                    usd_val = float(text)
+                    update_balance(target_user, usd_val)
+                    send_message(chat_id, f"âœ… <b>User ID {target_user}-à¦•à§‡ ${usd_val:.2f} USD à¦¬à§à¦¯à¦¾à¦²à§‡à¦¨à§à¦¸ à¦¯à§‹à¦— à¦•à¦°à¦¾ à¦¹à§Ÿà§‡à¦›à§‡à¥¤</b>")
+                    send_message(target_user, f"ðŸŽ‰ <b>à¦†à¦ªà¦¨à¦¾à¦° à¦¡à¦¿à¦ªà§‹à¦œà¦¿à¦Ÿ à¦ªà§à¦°à¦¸à§‡à¦¸ à¦¸à¦«à¦² à¦¹à§Ÿà§‡à¦›à§‡! ${usd_val:.2f} USD à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿà§‡ à¦¯à§‹à¦— à¦•à¦°à¦¾ à¦¹à§Ÿà§‡à¦›à§‡à¥¤</b>")
+                except Exception:
+                    send_message(chat_id, "âŒ <b>à¦­à§à¦² à¦…à§à¦¯à¦¾à¦®à¦¾à¦‰à¦¨à§à¦Ÿ!</b> à¦•à§‡à¦¬à¦² à¦¡à¦²à¦¾à¦°à§‡ à¦¸à¦‚à¦–à§à¦¯à¦¾ à¦²à¦¿à¦–à§à¦¨à¥¤ (à¦¯à§‡à¦®à¦¨: 0.21 à¦¬à¦¾ 5.00)")
+                del user_states[user_id]
+                return
+
+            # Admin Setting Rate State
+            elif isinstance(state_data, str) and state_data == "ADMIN_SET_PRICE":
+                try:
+                    new_p = float(text)
+                    set_number_price(new_p)
+                    send_message(chat_id, f"âœ… <b>WhatsApp à¦¨à¦®à§à¦¬à¦° à¦®à§‚à¦²à§à¦¯ à¦•à¦¾à¦¸à§à¦Ÿà¦®à¦¾à¦‡à¦œ à¦¸à¦«à¦² à¦¹à¦¯à¦¼à§‡à¦›à§‡!</b>\nà¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦°à§‡à¦Ÿ: <b>${new_p:.2f} USD</b>", reply_markup=get_main_keyboard(is_admin))
+                except Exception:
+                    send_message(chat_id, "âŒ <b>à¦­à§à¦² à¦‡à¦¨à¦ªà§à¦Ÿ!</b> à¦•à§‡à¦¬à¦² à¦°à§‡à¦Ÿà§‡à¦° à¦¸à¦‚à¦–à§à¦¯à¦¾ à¦²à¦¿à¦–à§à¦¨à¥¤ (à¦¯à§‡à¦®à¦¨: 0.12)")
+                del user_states[user_id]
+                return
+
+            # Admin Broadcast Message State
+            elif isinstance(state_data, str) and state_data == "ADMIN_BROADCAST":
+                all_users = get_all_users()
+                success, failed = 0, 0
+                send_message(chat_id, f"â³ <b>{len(all_users)} à¦œà¦¨ à¦‡à¦‰à¦œà¦¾à¦°à§‡à¦° à¦•à¦¾à¦›à§‡ à¦®à§‡à¦¸à§‡à¦œ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¶à§à¦°à§ à¦¹à¦šà§à¦›à§‡...</b>")
+                for u_id in all_users:
+                    try:
+                        res = send_message(u_id, text)
+                        if res.get("ok"):
+                            success += 1
+                        else:
+                            failed += 1
+                    except Exception:
+                        failed += 1
+                send_message(chat_id, f"âœ… <b>à¦¬à§à¦°à¦¡à¦•à¦¾à¦¸à§à¦Ÿ à¦¸à¦®à§à¦ªà¦¨à§à¦¨ à¦¹à¦¯à¦¼à§‡à¦›à§‡!</b>\n\nðŸŽ¯ à¦¸à¦«à¦²: {success}\nâŒ à¦¬à§à¦¯à¦°à§à¦¥: {failed}", reply_markup=get_main_keyboard(is_admin))
+                del user_states[user_id]
+                return
+
+ # Main Reply Keyboards
+        if text == "/start":
+            welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
+            send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
+
+        elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🇺🇸 USA WhatsApp (${current_price:.2f})", "callback_data": "confirm_buy_usa"}]
+                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa", "style": "danger"}]
                 ]
             }
-            send_message(chat_id, "<b>পছন্দের সার্ভিসটি সিলেক্ট করুন:</b>", reply_markup=markup)
+            send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
+            send_message(chat_id, "সার্ভিস অপশন:", reply_markup=markup)
 
         elif text == "💳 DEPOSIT":
+            dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
             markup = {
                 "inline_keyboard": [
-                    [{"text": "💖 bKash", "callback_data": "dep_bkash"}, {"text": "🟠 Nagad", "callback_data": "dep_nagad"}],
-                    [{"text": "🟡 Binance (USDT)", "callback_data": "dep_binance"}]
+                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash", "style": "danger"}],
+                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad", "style": "primary"}],
+                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance", "style": "success"}]
                 ]
             }
-            send_message(chat_id, f"💳 <b>ডিপোজিট অপশন (1 USD = {BDT_PER_USD} BDT):</b>\n\nপেমেন্ট মেথড বেছে নিন:", reply_markup=markup)
+            send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
+            send_message(chat_id, "পেমেন্ট গেটওয়ে:", reply_markup=markup)
 
         elif text == "👤 PROFILE":
-            u = get_user(user_id)
-            bal = u[2] if u else 0.0
-            recharge = u[3] if u else 0.0
-            send_message(
-                chat_id,
-                f"👤 <b>আপনার প্রোফাইল ইনফরমেশন:</b>\n\n"
+            u_info = get_user(user_id)
+            bal = u_info[2] if u_info else 0.0
+            tot = u_info[3] if u_info else 0.0
+            prof_text = (
+                f"👤 <b>Your Profile Information</b>\n\n"
                 f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-                f"💰 <b>বর্তমান ব্যালেন্স:</b> <b>${bal:.2f} USD</b>\n"
-                f"💳 <b>সর্বমোট রিচার্জ:</b> <b>${recharge:.2f} USD</b>\n"
-                f"🛒 <b>নাম্বার মূল্য:</b> ${current_price:.2f} USD / Number"
+                f"💰 <b>Current Balance:</b> ${bal:.2f} USD\n"
+                f"📊 <b>Total Recharge:</b> ${tot:.2f} USD"
             )
+            send_message(chat_id, prof_text, reply_markup=get_back_keyboard())
 
         elif text == "🎧 SUPPORT":
-            send_message(chat_id, f"🎧 <b>যেকোনো সমস্যায় সাপোর্ট এডমিনের সাথে যোগাযোগ করুন:</b>\n\n<b>Admin Contact:</b> @{SUPPORT_USERNAME}")
+            send_message(chat_id, f"<b>যেকোনো সাহায্যে যোগাযোগ করুন:</b>\n👉 @{SUPPORT_USERNAME}", reply_markup=get_back_keyboard())
 
         elif text == "⚙️ ADMIN PANEL" and is_admin:
+            msg = (
+                "<b>⚙️ ADMIN PANEL</b>\n\n"
+                f"💰 <b>WhatsApp Number Price:</b> ${current_price:.2f} USD\n"
+                f"💱 <b>Exchange Rate:</b> 1 USD = ৳{int(BDT_PER_USD)} BDT"
+            )
             markup = {
                 "inline_keyboard": [
-                    [{"text": "💲 সেট নাম্বার রেট", "callback_data": "admin_set_rate"}],
-                    [{"text": "📦 স্টক দেখুন", "callback_data": "admin_view_stock"}, {"text": "📤 নাম্বার আপলোড", "callback_data": "admin_upload_file"}],
-                    [{"text": "🗑️ স্টক খালি করুন", "callback_data": "admin_delete_stock_confirm"}],
-                    [{"text": "📢 ব্রডকাস্ট মেসেজ", "callback_data": "admin_broadcast"}]
+                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
+                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "danger"}],
+                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "success"}],
+                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
+                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm", "style": "danger"}]
                 ]
             }
-            send_message(chat_id, "⚙️ <b>ADMIN CONTROL PANEL:</b>", reply_markup=markup)
+            send_message(chat_id, msg, reply_markup=get_back_keyboard())
+            send_message(chat_id, "এডমিন একশন সিলেক্ট করুন:", reply_markup=markup)
 
-    # CALLBACK QUERY HANDLING
     elif "callback_query" in update:
         cb = update["callback_query"]
         cb_id = cb["id"]
@@ -500,8 +518,8 @@ def handle_update(update):
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}"}],
-                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}],
+                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                 ]
             }
             res_text = (
@@ -517,30 +535,27 @@ def handle_update(update):
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
-
+            
             if order:
                 link = order[2]
                 try:
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-                    }
-                    res = requests.get(link, headers=headers, timeout=10)
+                    res = requests.get(link, timeout=10)
                     raw_text = res.text.strip()
-
-                    otp_match = re.search(r'(\d{6})', raw_text)
-
+                    
+                    otp_match = re.search(r'\b\d{6}\b', raw_text)
+                    
                     if otp_match:
-                        otp_code = otp_match.group(1)
+                        otp_code = otp_match.group(0)
                         markup = {
                             "inline_keyboard": [
-                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
                             ]
                         }
                         send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                     else:
                         send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
-                except Exception as e:
-                    send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b>\nএরর: {e}")
+                except Exception:
+                    send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
 
         # Deposit Selection Events
         elif data == "dep_bkash":
@@ -583,7 +598,7 @@ def handle_update(update):
         elif data == "admin_delete_stock_confirm" and user_id == ADMIN_ID:
             markup = {
                 "inline_keyboard": [
-                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute"}]
+                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]
                 ]
             }
             edit_message(chat_id, message_id, "⚠️ <b>আপনি কি নিশ্চিতভাবে সমস্ত স্টক ফাইল/নম্বর মুছে ফেলতে চান?</b>", reply_markup=markup)
@@ -620,7 +635,7 @@ class DummyServer(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/html')
         self.end_headers()
         self.wfile.write(b"Bot Engine Live and Healthy.")
-        
+
     def do_HEAD(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')

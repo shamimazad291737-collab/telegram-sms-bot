@@ -644,11 +644,12 @@ class DummyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"Bot Engine Live and Healthy.")
 
+    # UptimeRobot এর HEAD রিকোয়েস্ট হ্যান্ডেল করার জন্য
     def do_HEAD(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
-
+        
 def safe_execution_wrapper(upd):
     try:
         handle_update(upd)

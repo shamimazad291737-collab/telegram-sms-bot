@@ -53,7 +53,6 @@ def init_db():
             value TEXT
         )
     ''')
-    # Default Price Setup
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('number_price', '0.10')")
     conn.commit()
     conn.close()
@@ -239,10 +238,15 @@ def handle_update(update):
         if user_id in user_states:
             state_data = user_states[user_id]
             
-            # Admin Uploading File via Menu Button
+            # Admin Uploading File via Menu Button (Strict Validation for Phone/Link)
             if is_admin and state_data == "ADMIN_UPLOAD_FILE":
                 if "document" in msg:
                     doc = msg["document"]
+                    file_name = doc.get("file_name", "").lower()
+                    if not (file_name.endswith(".txt") or file_name.endswith(".csv")):
+                        send_message(chat_id, "❌ <b>দয়া করে শুধুমাত্র .txt অথবা .csv ফাইল আপলোড করুন! PDF ফাইল আপলোড করা যাবে না।</b>", reply_markup=get_back_keyboard())
+                        return
+
                     file_id = doc["file_id"]
                     file_info = requests.get(BASE_URL + f"getFile?file_id={file_id}").json()
                     if file_info.get("ok"):
@@ -251,16 +255,19 @@ def handle_update(update):
                         
                         count = 0
                         for line in content.splitlines():
-                            if "," in line or " " in line:
+                            line = line.strip()
+                            # Strict check: must start with '+' and contain a link
+                            if line.startswith("+") and ("http://" in line or "https://" in line):
                                 parts = line.replace(",", " ").split()
                                 if len(parts) >= 2:
                                     add_stock_item(parts[0].strip(), parts[1].strip())
                                     count += 1
+                        
                         send_message(chat_id, f"✅ <b>সফলভাবে {count} টি নম্বর স্টকে আপলোড করা হয়েছে!</b>", reply_markup=get_main_keyboard(is_admin))
                         del user_states[user_id]
                         return
                 else:
-                    send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি ফাইল (.txt / .csv) আপলোড করুন।</b>", reply_markup=get_back_keyboard())
+                    send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি সঠিক টেক্সট (.txt / .csv) ফাইল আপলোড করুন।</b>", reply_markup=get_back_keyboard())
                     return
 
             # Step 1: Receiving TrxID / Order ID
@@ -468,7 +475,7 @@ def handle_update(update):
                 except Exception:
                     send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
 
-         # Deposit Selection Events
+        # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = "WAITING_TRX_BKASH"
             edit_message(chat_id, message_id, f"💖 <b>bKash Send Money:</b> <code>{BKASH_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে মেসেজ করুন:")
@@ -500,7 +507,7 @@ def handle_update(update):
                 send_message(chat_id, "📊 <b>বর্তমানে স্টকে কোনো নম্বর খালি নেই!</b>")
             else:
                 stock_text = f"📊 <b>বর্তমান স্টকে থাকা নম্বরসমূহ (মোট: {len(stock_items)} টি):</b>\n\n"
-                for item in stock_items[:30]:  # Limit display to first 30 items
+                for item in stock_items[:30]:
                     stock_text += f"📱 <code>{item[1]}</code>\n🔗 {item[2]}\n\n"
                 if len(stock_items) > 30:
                     stock_text += f"<i>...এবং আরও {len(stock_items) - 30} টি নম্বর রয়েছে।</i>"
@@ -545,7 +552,7 @@ if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot Engine Online with Full Stock Clear Support...")
+    print("🚀 Bot Engine Online with Strict Text/CSV Parsing Guard...")
     offset = 0
     while True:
         try:

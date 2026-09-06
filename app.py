@@ -500,38 +500,40 @@ def handle_update(update):
 
         current_price = get_number_price()
 
-        if data == "confirm_buy_usa":
-            u_info = get_user(user_id)
-            bal = u_info[2] if u_info else 0.0
+            if data == "confirm_buy_usa":
+        u_info = get_user(user_id)
+        bal = u_info[2] if u_info else 0.0
 
-            if bal < current_price:
-                edit_message(chat_id, message_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\nনম্বর কিনতে অন্তত ${current_price:.2f} USD ব্যালেন্স লাগবে। Deposit সেকশন থেকে রিচার্জ করুন।")
-                return
+        if bal < current_price:
+            edit_message(chat_id, message_id, "❌ <b>पर्याप्त ব্যালেন্স নেই!</b>")
+            return
 
-            phone, link = pop_stock_item()
-            if not phone:
-                edit_message(chat_id, message_id, "⚠️ <b>দুঃখিত! বর্তমানে স্টক ফাঁকা রয়েছে।</b> কিছু সময় পর আবার চেষ্টা করুন।")
-                return
+        phone, link = pop_stock_item()
+        if not phone:
+            edit_message(chat_id, message_id, "⚠️ <b>দুঃখিত! বর্তমানে স্টক খালি রয়েছে।</b>")
+            return
 
-            deduct_balance(user_id, current_price)
-            save_active_order(user_id, phone, link)
+        deduct_balance(user_id, current_price)
+        save_active_order(user_id, phone, link)
 
-            markup = {
-                "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}],
-                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
-                ]
-            }
-            res_text = (
-                f"✅ <b>নম্বর বরাদ্দ করা হয়েছে!</b>\n\n"
-                f"📱 <b>USA Number:</b> <code>{phone}</code>\n"
-                f"🔗 <b>OTP Link:</b> {link}\n"
-                f"💰 <b>ফি কাটা হয়েছে:</b> ${current_price:.2f} USD\n\n"
-                f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন অথবা সরাসরি উপরের লিংকে ঢুকেও কোড দেখতে পারেন।"
-            )
-                    edit_message(chat_id, message_id, res_text, reply_markup=markup)
-                            # REGEX OTP EXTRACTION
-        elif data.startswith("chk_otp_"):
+        markup = {
+            "inline_keyboard": [
+                [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}"}],
+                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+            ]
+        }
+        res_text = (
+            f"✅ <b>নম্বর বরাদ্দ করা হয়েছে!</b>\n\n"
+            f"📱 <b>USA Number:</b> <code>{phone}</code>\n"
+            f"🔗 <b>OTP Link:</b> {link}\n"
+            f"💰 <b>ফি কাটা হয়েছে:</b> ${current_price:.2f} USD\n\n"
+            f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন।"
+        )
+        edit_message(chat_id, message_id, res_text, reply_markup=markup)
+        
+        # অটোমেটিক মেইন মেনু পাঠানোর জন্য এই লাইনটি যোগ করা হয়েছে
+        send_message(chat_id, "<b>🏠 মেইন মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
+    
             phone = data.replace("chk_otp_", "").replace("+", "").strip()
             order = get_order_by_phone(phone)
 

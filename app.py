@@ -533,30 +533,32 @@ def handle_update(update):
 
         # REGEX OTP EXTRACTION
         elif data.startswith("chk_otp_"):
-            phone = data.replace("chk_otp_", "")
-            order = get_order_by_phone(phone)
-            
-            if order:
-                link = order[2]
-                try:
-                    res = requests.get(link, timeout=10)
-                    raw_text = res.text.strip()
-                    
-                    otp_match = re.search(r'\b\d{6}\b', raw_text)
-                    
-                    if otp_match:
-                        otp_code = otp_match.group(0)
-                        markup = {
-                            "inline_keyboard": [
-                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
-                            ]
-                        }
-                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
-                    else:
-                        send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
-                except Exception:
-                    send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
+    phone = data.replace("chk_otp_", "")
+    order = get_order_by_phone(phone)
 
+    if order:
+        link = order[2]
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+            }
+            res = requests.get(link, headers=headers, timeout=10)
+            raw_text = res.text.strip()
+
+            otp_match = re.search(r'(\d{6})', raw_text)
+
+            if otp_match:
+                otp_code = otp_match.group(1)
+                markup = {
+                    "inline_keyboard": [
+                        [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                    ]
+                }
+                send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+            else:
+                send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
+        except Exception as e:
+            send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b>\nএরর: {e}")
         # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}
@@ -565,16 +567,13 @@ def handle_update(update):
         elif data == "dep_nagad":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "NAGAD"}
             send_message(chat_id, f"🟠 <b>Nagad Deposit Selected</b>\n\nকত টাকা (BDT) ডিপোজিট করতে চান লিখে পাঠান:\n<i>(রেট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD)</i>", reply_markup=get_back_keyboard())
-
         elif data == "dep_binance":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BINANCE"}
             send_message(chat_id, "🟡 <b>Binance Deposit Selected</b>\n\nকত <b>USDT</b> (USD) ডিপোজিট করতে চান লিখে পাঠান:", reply_markup=get_back_keyboard())
-
         # Admin Control Callbacks
         elif data == "admin_set_rate" and user_id == ADMIN_ID:
             user_states[user_id] = "ADMIN_SET_PRICE"
             send_message(chat_id, f"🏷️ <b>WhatsApp নম্বরের নতুন মূল্য ($ USD) লিখে পাঠান:</b>\n(বর্তমান রেট: ${current_price:.2f} USD)", reply_markup=get_back_keyboard())
-
         elif data == "admin_broadcast" and user_id == ADMIN_ID:
             user_states[user_id] = "ADMIN_BROADCAST"
             send_message(chat_id, "📢 <b>সব ইউজারদের উদ্দেশ্যে পাঠানোর বার্তাটি লিখে পাঠান:</b>", reply_markup=get_back_keyboard())

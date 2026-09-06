@@ -238,8 +238,100 @@ def handle_update(update):
         if user_id in user_states:
             state_data = user_states[user_id]
             
-            # Admin Uploading File via Menu Button (Strict Validation for Phone/Link)
-            if is_admin and state_data == "ADMIN_UPLOAD_FILE":
+            # Step 1: Receiving Deposit Amount
+            if isinstance(state_data, dict) and state_data.get("step") == "WAITING_AMOUNT":
+                method = state_data["method"]
+                try:
+                    amount = float(text)
+                    if amount <= 0:
+                        send_message(chat_id, "❌ <b>সঠিক পরিমাণ উল্লেখ করুন!</b>")
+                        return
+                    
+                    user_states[user_id] = {
+                        "step": "WAITING_TRX",
+                        "method": method,
+                        "amount": amount
+                    }
+
+                    if method == "BKASH":
+                        msg_text = (
+                            f"💖 <b>bKash Send Money</b>\n\n"
+                            f"💵 <b>ডিপোজিট পরিমাণ:</b> ৳{amount:.2f} BDT\n"
+                            f"📱 <b>bKash Number:</b> <code>{BKASH_NUMBER}</code>\n\n"
+                            f"উপরের নম্বরে টাকা পাঠানোর পর আপনার <b>TrxID</b> এখানে মেসেজ করুন:"
+                        )
+                    elif method == "NAGAD":
+                        msg_text = (
+                            f"🟠 <b>Nagad Send Money</b>\n\n"
+                            f"💵 <b>ডিপোজিট পরিমাণ:</b> ৳{amount:.2f} BDT\n"
+                            f"📱 <b>Nagad Number:</b> <code>{NAGAD_NUMBER}</code>\n\n"
+                            f"উপরের নম্বরে টাকা পাঠানোর পর আপনার <b>TrxID</b> এখানে মেসেজ করুন:"
+                        )
+                    elif method == "BINANCE":
+                        msg_text = (
+                            f"🟡 <b>Binance Pay (Crypto)</b>\n\n"
+                            f"💵 <b>ডিপোজিট পরিমাণ:</b> {amount:.2f} USDT\n"
+                            f"🆔 <b>Binance Pay ID:</b> <code>{BINANCE_PAY_ID}</code>\n\n"
+                            f"উপরের আইডি তে USDT পাঠানোর পর আপনার <b>Binance Order ID / TrxID</b> মেসেজ লিখে পাঠান:"
+                        )
+
+                    send_message(chat_id, msg_text, reply_markup=get_back_keyboard())
+                    return
+                except ValueError:
+                    send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল সংখ্যা লিখুন। (যেমন: 100 বা 5)")
+                    return
+
+            # Step 2: Receiving TrxID / Order ID
+            elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_TRX":
+                method = state_data["method"]
+                amount = state_data["amount"]
+                
+                user_states[user_id] = {
+                    "step": "WAITING_SCREENSHOT",
+                    "method": method,
+                    "amount": amount,
+                    "trx_id": text
+                }
+                send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_keyboard())
+                return
+
+            # Step 3: Receiving Screenshot & Sending to Admin
+            elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_SCREENSHOT":
+                if "photo" in msg:
+                    photo_file_id = msg["photo"][-1]["file_id"]
+                    method = state_data["method"]
+                    amount = state_data["amount"]
+                    trx_id = state_data["trx_id"]
+
+                    unit = "USDT" if method == "BINANCE" else "BDT"
+
+                    admin_markup = {
+                        "inline_keyboard": [
+                            [
+                                {"text": "✅ Approve", "callback_data": f"dep_app_{user_id}", "style": "success"},
+                                {"text": "❌ Reject", "callback_data": f"dep_rej_{user_id}", "style": "danger"}
+                            ]
+                        ]
+                    }
+                    admin_caption = (
+                        f"📥 <b>New Deposit Request ({method})</b>\n\n"
+                        f"👤 <b>User:</b> {html.escape(first_name)} (@{username})\n"
+                        f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
+                        f"💰 <b>Amount Requested:</b> {amount} {unit}\n"
+                        f"🧾 <b>TrxID / Order ID:</b> <code>{html.escape(trx_id)}</code>\n\n"
+                        f"যাচাই করে Approve বা Reject করুন:"
+                    )
+                    
+                    send_photo_to_admin(ADMIN_ID, photo_file_id, admin_caption, reply_markup=admin_markup)
+                    send_message(chat_id, "✅ <b>আপনার তথ্য ও স্ক্রিনশট অ্যাডমিনের কাছে পাঠানো হয়েছে!</b>\nযাচাই করার পর অ্যাকাউন্টে ব্যালেন্স যোগ করা হবে।", reply_markup=get_main_keyboard(is_admin))
+                    del user_states[user_id]
+                    return
+                else:
+                    send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>", reply_markup=get_back_keyboard())
+                    return
+
+            # Admin Uploading File via Menu Button
+            elif is_admin and state_data == "ADMIN_UPLOAD_FILE":
                 if "document" in msg:
                     doc = msg["document"]
                     file_name = doc.get("file_name", "").lower()
@@ -256,7 +348,6 @@ def handle_update(update):
                         count = 0
                         for line in content.splitlines():
                             line = line.strip()
-                            # Strict check: must start with '+' and contain a link
                             if line.startswith("+") and ("http://" in line or "https://" in line):
                                 parts = line.replace(",", " ").split()
                                 if len(parts) >= 2:
@@ -270,49 +361,7 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি সঠিক টেক্সট (.txt / .csv) ফাইল আপলোড করুন।</b>", reply_markup=get_back_keyboard())
                     return
 
-            # Step 1: Receiving TrxID / Order ID
-            if isinstance(state_data, str) and state_data.startswith("WAITING_TRX_"):
-                method = state_data.replace("WAITING_TRX_", "")
-                user_states[user_id] = {
-                    "step": "WAITING_SCREENSHOT",
-                    "method": method,
-                    "trx_id": text
-                }
-                send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_keyboard())
-                return
-
-            # Step 2: Receiving Screenshot
-            elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_SCREENSHOT":
-                if "photo" in msg:
-                    photo_file_id = msg["photo"][-1]["file_id"]
-                    method = state_data["method"]
-                    trx_id = state_data["trx_id"]
-
-                    admin_markup = {
-                        "inline_keyboard": [
-                            [
-                                {"text": "✅ Approve", "callback_data": f"dep_app_{user_id}", "style": "success"},
-                                {"text": "❌ Reject", "callback_data": f"dep_rej_{user_id}", "style": "danger"}
-                            ]
-                        ]
-                    }
-                    admin_caption = (
-                        f"📥 <b>New Deposit Request ({method})</b>\n\n"
-                        f"👤 <b>User:</b> {html.escape(first_name)} (@{username})\n"
-                        f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-                        f"🧾 <b>TrxID / Order ID:</b> <code>{html.escape(trx_id)}</code>\n\n"
-                        f"যাচাই করে Approve বা Reject করুন:"
-                    )
-                    
-                    send_photo_to_admin(ADMIN_ID, photo_file_id, admin_caption, reply_markup=admin_markup)
-                    send_message(chat_id, "✅ <b>আপনার তথ্য ও স্ক্রিনশট অ্যাডমিনের কাছে পাঠানো হয়েছে!</b>\nযাচাই করার পর অ্যাকাউন্টে ব্যালেন্স যোগ করা হবে।", reply_markup=get_main_keyboard(is_admin))
-                    del user_states[user_id]
-                    return
-                else:
-                    send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>", reply_markup=get_back_keyboard())
-                    return
-
-            # Admin Inputting Amount
+            # Admin Inputting Balance Amount to Add
             elif isinstance(state_data, str) and state_data.startswith("ADMIN_APPROVE_AMOUNT_"):
                 target_user = int(state_data.replace("ADMIN_APPROVE_AMOUNT_", ""))
                 try:
@@ -475,18 +524,18 @@ def handle_update(update):
                 except Exception:
                     send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
 
-        # Deposit Selection Events
+        # Deposit Selection Events (Asking for Amount First)
         elif data == "dep_bkash":
-            user_states[user_id] = "WAITING_TRX_BKASH"
-            edit_message(chat_id, message_id, f"💖 <b>bKash Send Money:</b> <code>{BKASH_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে মেসেজ করুন:")
+            user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}
+            send_message(chat_id, "💖 <b>bKash Deposit Selected</b>\n\nকত টাকা (BDT) ডিপোজিট করতে চান লিখে পাঠান:", reply_markup=get_back_keyboard())
 
         elif data == "dep_nagad":
-            user_states[user_id] = "WAITING_TRX_NAGAD"
-            edit_message(chat_id, message_id, f"🟠 <b>Nagad Send Money:</b> <code>{NAGAD_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে মেসেজ করুন:")
+            user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "NAGAD"}
+            send_message(chat_id, "🟠 <b>Nagad Deposit Selected</b>\n\nকত টাকা (BDT) ডিপোজিট করতে চান লিখে পাঠান:", reply_markup=get_back_keyboard())
 
         elif data == "dep_binance":
-            user_states[user_id] = "WAITING_TRX_BINANCE"
-            edit_message(chat_id, message_id, f"🟡 <b>Binance Pay ID:</b> <code>{BINANCE_PAY_ID}</code>\n\nUSDT পাঠানোর পর আপনার <b>Binance Order ID</b> মেসেজ লিখে পাঠান:")
+            user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BINANCE"}
+            send_message(chat_id, "🟡 <b>Binance Deposit Selected</b>\n\nকত <b>USDT</b> ডিপোজিট করতে চান লিখে পাঠান:", reply_markup=get_back_keyboard())
 
         # Admin Control Callbacks
         elif data == "admin_set_rate" and user_id == ADMIN_ID:
@@ -529,7 +578,7 @@ def handle_update(update):
         elif data.startswith("dep_app_"):
             target_user = int(data.replace("dep_app_", ""))
             user_states[user_id] = f"ADMIN_APPROVE_AMOUNT_{target_user}"
-            send_message(chat_id, f"<b>User ID {target_user}-এর জন্য কত $ যোগ করতে চান লিখে পাঠান:</b>")
+            send_message(chat_id, f"<b>User ID {target_user}-এর অ্যাকাউন্টে কত $ (USD) যোগ করতে চান লিখে পাঠান:</b>")
 
         elif data.startswith("dep_rej_"):
             target_user = int(data.replace("dep_rej_", ""))
@@ -552,7 +601,7 @@ if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot Engine Online with Strict Text/CSV Parsing Guard...")
+    print("🚀 Bot Engine Online...")
     offset = 0
     while True:
         try:

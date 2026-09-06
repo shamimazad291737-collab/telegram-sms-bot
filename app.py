@@ -5,6 +5,8 @@ import html
 import threading
 import time
 import re
+import trace
+import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Environment Variables
@@ -169,7 +171,11 @@ def send_message(chat_id, text, reply_markup=None):
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    return requests.post(BASE_URL + "sendMessage", json=payload).json()
+    try:
+        return requests.post(BASE_URL + "sendMessage", json=payload, timeout=10).json()
+    except Exception as e:
+        print(f"Error sending message: {e}")
+        return {}
 
 def edit_message(chat_id, message_id, text, reply_markup=None):
     payload = {
@@ -180,7 +186,10 @@ def edit_message(chat_id, message_id, text, reply_markup=None):
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    requests.post(BASE_URL + "editMessageText", json=payload)
+    try:
+        requests.post(BASE_URL + "editMessageText", json=payload, timeout=10)
+    except Exception as e:
+        print(f"Error editing message: {e}")
 
 def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
     payload = {
@@ -191,7 +200,10 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    requests.post(BASE_URL + "sendPhoto", json=payload)
+    try:
+        requests.post(BASE_URL + "sendPhoto", json=payload, timeout=10)
+    except Exception as e:
+        print(f"Error sending photo: {e}")
 
 # Keyboards
 def get_main_keyboard(is_admin=False):
@@ -481,7 +493,10 @@ def handle_update(update):
         user_id = cb["from"]["id"]
         data = cb.get("data", "")
 
-        requests.post(BASE_URL + "answerCallbackQuery", data={"callback_query_id": cb_id})
+        try:
+            requests.post(BASE_URL + "answerCallbackQuery", data={"callback_query_id": cb_id}, timeout=5)
+        except Exception:
+            pass
 
         current_price = get_number_price()
 
@@ -507,7 +522,6 @@ def handle_update(update):
                     [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                 ]
             }
-            # Message updated to include the direct OTP link
             res_text = (
                 f"✅ <b>নম্বর বরাদ্দ করা হয়েছে!</b>\n\n"
                 f"📱 <b>USA Number:</b> <code>{phone}</code>\n"
@@ -528,7 +542,6 @@ def handle_update(update):
                     res = requests.get(link, timeout=10)
                     raw_text = res.text.strip()
                     
-                    # Exact 6-digit OTP Pattern Matching
                     otp_match = re.search(r'\b\d{6}\b', raw_text)
                     
                     if otp_match:
@@ -615,23 +628,30 @@ def handle_update(update):
             send_message(target_user, f"❌ <b>আপনার জমা দেওয়া ডিপোজিট প্রুফটি সঠিক নয়!</b>\nদয়া করে সঠিক তথ্য দিন বা সাপোর্ট অ্যাডমিনের সাথে কথা বলুন: @{SUPPORT_USERNAME}")
             send_message(chat_id, f"❌ <b>User ID {target_user}-এর ডিপোজিট বাতিল করা হয়েছে।</b>")
 
-# Dummy Server Header
+# Keep-Alive Web Server for UptimeRobot
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header('Content-type', 'text/html')
         self.end_headers()
-        self.wfile.write(b"Bot Engine Live.")
+        self.wfile.write(b"Bot Engine Live and Healthy.")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), DummyServer)
     server.serve_forever()
 
+def safe_execution_wrapper(upd):
+    try:
+        handle_update(upd)
+    except Exception as e:
+        print(f"Exception Handled Safety: {e}")
+
 if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot Engine Online with OTP Link Display...")
+    print("🚀 Bot Engine Online with Crash Shield & UptimeRobot Support...")
     offset = 0
     while True:
         try:
@@ -639,6 +659,7 @@ if __name__ == "__main__":
             if res.get("ok"):
                 for update in res.get("result", []):
                     offset = update["update_id"] + 1
-                    threading.Thread(target=handle_update, args=(update,), daemon=True).start()
-        except Exception:
-            time.sleep(2)
+                    threading.Thread(target=safe_execution_wrapper, args=(update,), daemon=True).start()
+        except Exception as e:
+            print(f"Polling Network Recovering... {e}")
+            time.sleep(3)

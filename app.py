@@ -1,5 +1,5 @@
 import os
-import psycopg2
+import sqlite3
 import requests
 import html
 import threading

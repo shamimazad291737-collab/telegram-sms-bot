@@ -546,7 +546,7 @@ def handle_update(update):
                         send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
                 except Exception as e:
                     send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে: {e}</b>")
-                        
+
         # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}

@@ -6,17 +6,17 @@ import sqlite3
 import requests
 import threading
 import html
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ==========================================
 # Global Configuration & Settings
 # ==========================================
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # আপনার টেলিগ্রাম বট টোকেন দিন
-ADMIN_ID = 123456789              # আপনার টেলিগ্রাম ইউজার আইডি দিন
-SUPPORT_USERNAME = "YourSupportUsername" # সাপোর্ট ইউজারনেম (অ্যাট ছাড়া)
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "123456789"))
+SUPPORT_USERNAME = os.environ.get("SUPPORT_USERNAME", "YourSupportUsername")
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
-# ইউজার স্টেট ট্র্যাক করার জন্য (অ্যাডমিন ইনপুটের ক্ষেত্রে)
 user_states = {}
 
 # ==========================================
@@ -25,7 +25,6 @@ user_states = {}
 def init_db():
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
-    # Users Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -33,20 +32,16 @@ def init_db():
             balance REAL DEFAULT 0.0
         )
     ''')
-    # Dynamic Settings Table (Payment Details & Service Rates)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
         )
     ''')
-    
-    # Default Configs Insert
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payment_details', 'Bkash/Nagad: 017XXXXXXXX\nBinance Pay ID: 12345678')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rate_whatsapp', '0.50')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rate_telegram', '0.60')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rate_facebook', '0.30')")
-    
     conn.commit()
     conn.close()
 
@@ -138,34 +133,28 @@ def handle_update(update):
         add_user(user_id, first_name)
         is_admin = (user_id == ADMIN_ID)
 
-        # ---------------- State Input Handling (Admin Control) ----------------
         if user_id in user_states:
             state = user_states[user_id]
-            
             if state == "WAITING_PAYMENT_TEXT":
                 set_setting("payment_details", text)
                 del user_states[user_id]
                 send_message(chat_id, "✅ <b>Payment Methods successfully updated!</b>")
                 return
-
             elif state == "WAITING_WA_RATE":
                 set_setting("rate_whatsapp", text)
                 del user_states[user_id]
                 send_message(chat_id, f"✅ <b>WhatsApp rate updated to: ${text}</b>")
                 return
-
             elif state == "WAITING_TG_RATE":
                 set_setting("rate_telegram", text)
                 del user_states[user_id]
                 send_message(chat_id, f"✅ <b>Telegram rate updated to: ${text}</b>")
                 return
-
             elif state == "WAITING_FB_RATE":
                 set_setting("rate_facebook", text)
                 del user_states[user_id]
                 send_message(chat_id, f"✅ <b>Facebook rate updated to: ${text}</b>")
                 return
-
             elif state == "WAITING_ADD_BAL":
                 try:
                     parts = text.split()
@@ -176,15 +165,11 @@ def handle_update(update):
                     send_message(chat_id, f"✅ <b>User <code>{target_id}</code>-এর অ্যাকাউন্টে ${amt} যোগ করা হয়েছে।</b>")
                     send_message(target_id, f"🎉 <b>আপনার অ্যাকাউন্টে ${amt} জমা হয়েছে!</b>")
                 except Exception:
-                    send_message(chat_id, "❌ **ফরম্যাট ভুল!** উদাহরণ অনুযায়ী লিখুন: `USER_ID AMOUNT` (যেমন: `123456789 5.0`)", parse_mode="Markdown")
+                    send_message(chat_id, "❌ **ফরম্যাট ভুল!** উদাহরণ: `USER_ID AMOUNT`", parse_mode="Markdown")
                 return
 
-        # ---------------- Commands & Menu Actions ----------------
         if text.startswith("/start"):
-            welcome_text = (
-                f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\n"
-                f"নিচের মেনু থেকে আপনার সার্ভিস নির্বাচন করুন:"
-            )
+            welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে আপনার সার্ভিস নির্বাচন করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
 
         elif text == "📱 GET NUMBER":
@@ -205,37 +190,22 @@ def handle_update(update):
 
         elif text == "💳 DEPOSIT":
             pay_info = get_setting("payment_details")
-            dep_text = (
-                f"💳 <b>DEPOSIT BALANCE</b>\n\n"
-                f"<b>পেমেন্ট ইনফরমেশন:</b>\n"
-                f"<code>{pay_info}</code>\n\n"
-                f"টাকা পাঠানোর পর Admin/Support-এ Transaction ID এবং স্ক্রিনশট পাঠান।"
-            )
+            dep_text = f"💳 <b>DEPOSIT BALANCE</b>\n\n<b>পেমেন্ট ইনফরমেশন:</b>\n<code>{pay_info}</code>\n\nটাকা পাঠানোর পর Admin/Support-এ Transaction ID এবং স্ক্রিনশট পাঠান।"
             send_message(chat_id, dep_text)
 
         elif text == "👤 PROFILE":
             u_data = get_user(user_id)
             bal = u_data["balance"] if u_data else 0.0
-            prof_text = (
-                f"👤 <b>USER PROFILE</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
-                f"👤 <b>Name:</b> {html.escape(first_name)}\n"
-                f"💰 <b>Balance:</b> ${bal:.2f}\n"
-                f"━━━━━━━━━━━━━━━━━━━"
-            )
+            prof_text = f"👤 <b>USER PROFILE</b>\n━━━━━━━━━━━━━━━━━━━\n🆔 <b>ID:</b> <code>{user_id}</code>\n👤 <b>Name:</b> {html.escape(first_name)}\n💰 <b>Balance:</b> ${bal:.2f}\n━━━━━━━━━━━━━━━━━━━"
             send_message(chat_id, prof_text)
 
         elif text == "🎧 SUPPORT":
-            markup = {"inline_keyboard": [
-                [{"text": "💬 Contact Admin", "url": f"https://t.me/{SUPPORT_USERNAME}"}]
-            ]}
+            markup = {"inline_keyboard": [[{"text": "💬 Contact Admin", "url": f"https://t.me/{SUPPORT_USERNAME}"}]]}
             send_message(chat_id, "🎧 <b>যেকোনো সাহায্য বা ডিপোজিটের জন্য অ্যাডমিনের সাথে যোগাযোগ করুন:</b>", reply_markup=markup)
 
         elif text == "⚙️ ADMIN PANEL" and is_admin:
             send_message(chat_id, "⚙️ <b>WELCOME TO ADMIN PANEL</b>\nনিচের অপশনগুলো থেকে পরিবর্তন করুন:", reply_markup=get_admin_keyboard())
 
-    # ---------------- Inline Callbacks ----------------
     elif "callback_query" in update:
         cb = update["callback_query"]
         cb_id = cb["id"]
@@ -245,17 +215,14 @@ def handle_update(update):
 
         requests.post(BASE_URL + "answerCallbackQuery", data={"callback_query_id": cb_id})
 
-        # --- User Buy Request ---
         if data.startswith("get_num_"):
             service = data.replace("get_num_", "").upper()
             send_message(chat_id, f"📱 <b>{service} Number Allocated:</b>\n<code>+8801700000000</code>\n\n⌛ OTP-র জন্য অপেক্ষা করা হচ্ছে...")
 
-        # --- Admin Control Options ---
         elif user_id == ADMIN_ID:
             if data == "admin_set_payment":
                 user_states[user_id] = "WAITING_PAYMENT_TEXT"
-                send_message(chat_id, "📝 <b>নতুন Payment Methods লেখে মেসেজ দিন:</b>\n(যেমন:\nBkash: 017XXXXX\nNagad: 018XXXXX\nBinance ID: 123456)")
-
+                send_message(chat_id, "📝 <b>নতুন Payment Methods লেখে মেসেজ দিন:</b>")
             elif data == "admin_set_rates":
                 markup = {"inline_keyboard": [
                     [{"text": "WhatsApp Rate", "callback_data": "rate_set_wa"}],
@@ -263,30 +230,36 @@ def handle_update(update):
                     [{"text": "Facebook Rate", "callback_data": "rate_set_fb"}]
                 ]}
                 send_message(chat_id, "🏷️ <b>কোন সার্ভিসের রেট পরিবর্তন করতে চান?</b>", reply_markup=markup)
-
             elif data == "rate_set_wa":
                 user_states[user_id] = "WAITING_WA_RATE"
-                send_message(chat_id, "✏️ <b>WhatsApp এর নতুন দাম লিখুন (যেমন: 0.50):</b>")
-
+                send_message(chat_id, "✏️ <b>WhatsApp এর নতুন দাম লিখুন:</b>")
             elif data == "rate_set_tg":
                 user_states[user_id] = "WAITING_TG_RATE"
-                send_message(chat_id, "✏️ <b>Telegram এর নতুন দাম লিখুন (যেমন: 0.60):</b>")
-
+                send_message(chat_id, "✏️ <b>Telegram এর নতুন দাম লিখুন:</b>")
             elif data == "rate_set_fb":
                 user_states[user_id] = "WAITING_FB_RATE"
-                send_message(chat_id, "✏️ <b>Facebook এর নতুন দাম লিখুন (যেমন: 0.30):</b>")
-
+                send_message(chat_id, "✏️ <b>Facebook এর নতুন দাম লিখুন:</b>")
             elif data == "admin_add_bal":
                 user_states[user_id] = "WAITING_ADD_BAL"
-                send_message(chat_id, "➕ <b>ইউজার আইডি ও পরিমাণ পাঠান:</b>\n<code>USER_ID AMOUNT</code> (যেমন: <code>123456789 5.0</code>)")
+                send_message(chat_id, "➕ <b>ইউজার আইডি ও পরিমাণ পাঠান:</b>\n<code>USER_ID AMOUNT</code>")
 
-# ==========================================
-# Polling Loop
-# ==========================================
+# Web Server for Render Web Service Port Binding
+class DummyServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is active!")
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), DummyServer)
+    server.serve_forever()
+
 if __name__ == "__main__":
     init_db()
-    print("🚀 Bot is running with Admin Controls...")
+    threading.Thread(target=run_web_server, daemon=True).start()
     
+    print("🚀 Bot is running with Environment Variables...")
     offset = 0
     while True:
         try:

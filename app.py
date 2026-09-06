@@ -551,43 +551,30 @@ def handle_update(update):
                 f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন অথবা সরাসরি উপরের লিংকে ঢুকেও কোড দেখতে পারেন।"
             )
             edit_message(chat_id, message_id, res_text, reply_markup=markup)
-                 # REGEX OTP EXTRACTION
-    elif data.startswith("chk_otp_"):
-            phone = data.replace("chk_otp_", "").replace("+", "").strip()
-            order = get_order_by_phone(phone)
-
-                if order:
-                link = order[2]
-                try:
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                }
-                res = requests.get(link, headers=headers, timeout=12)
-                raw_text = res.text
-
-                otp_match = re.search(r'\b\d{4,8}\b', raw_text) or re.search(r'\b\d{3}[-\s]\d{3}\b', raw_text)
-
-                if otp_match:
-                    otp_code = otp_match.group(0)
-                else:
-                    otp_code = None
-
-                if otp_code:
-                    markup = {
-                        "inline_keyboard": [
-                            [{"text": "🛒 Buy Another Number", "callback_data": "buy_number"}]
-                        ]
-                    }
-                    send_message(chat_id, f"🎂 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
-                    GROUP_CHAT_ID = "-100396861153"
-                    send_message(GROUP_CHAT_ID, f"🔔 <b>New OTP Received!</b>\n📱 Phone: <code>{phone}</code>\n🔑 OTP: <code>{otp_code}</code>")
-                else:
-                    send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
-            except Exception as e:
-                send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে:</b> {e}")
-        else:
+    # REGEX OTP EXTRACTION
+            elif data.startswith("chk_otp_"):
+        phone = data.replace("chk_otp_", "").replace("+", "").strip()
+        order = get_order_by_phone(phone)
+        if not order:
             send_message(chat_id, "❌ <b>অর্ডার সম্পর্কিত তথ্য খুঁজে পাওয়া যায়নি!</b>")
-            
+            return
+
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            res = requests.get(order[2], headers=headers, timeout=12)
+            raw_text = res.text
+            otp_match = re.search(r'\b\d{4,8}\b', raw_text) or re.search(r'\b\d{3}[-\s]\d{3}\b', raw_text)
+            otp_code = otp_match.group(0) if otp_match else None
+
+            if otp_code:
+                markup = {"inline_keyboard": [[{"text": "🛒 Buy Another Number", "callback_data": "buy_number"}]]}
+                send_message(chat_id, f"🎂 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                send_message("-100396861153", f"🔔 <b>New OTP Received!</b>\n📱 Phone: <code>{phone}</code>\n🔑 OTP: <code>{otp_code}</code>")
+            else:
+                send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
+        except Exception as e:
+            send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে:</b> {e}")
+
         # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}

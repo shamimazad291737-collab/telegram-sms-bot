@@ -588,7 +588,7 @@ def handle_update(update):
         send_message(chat_id, "🟡 <b>Binance Deposit Selected</b>")
 
         # Admin Control Callbacks
-        elif data == "admin_set_rate" and user_id == ADMIN_ID:
+            if data == "admin_set_rate" and user_id == ADMIN_ID:
             user_states[user_id] = "ADMIN_SET_PRICE"
             send_message(chat_id, f"🏷️ <b>WhatsApp নম্বরের নতুন মূল্য ($ USD) লিখে পাঠান:</b>\n(বর্তমান রেট: ${current_price:.2f} USD)", reply_markup=get_back_keyboard())
 

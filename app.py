@@ -556,7 +556,7 @@ def handle_update(update):
             phone = data.replace("chk_otp_", "").replace("+", "").strip()
             order = get_order_by_phone(phone)
 
-        if order:
+            if order:
             link = order[2]
             try:
                 headers = {

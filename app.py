@@ -24,45 +24,58 @@ BINANCE_PAY_ID = "123456789"
 
 user_states = {}
 
+# Database Helper Function
+def get_db():
+    return psycopg2.connect(os.environ.get("DATABASE_URL"))
+
 # Database Initialization
 def init_db():
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
+    
+    # Users table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
+            user_id BIGINT PRIMARY KEY,
             username TEXT,
             balance REAL DEFAULT 0.0,
             total_recharge REAL DEFAULT 0.0
         )
     ''')
+    
+    # Stock table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS stock (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             phone_number TEXT,
             otp_link TEXT
         )
     ''')
+    
+    # Active Orders table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS active_orders (
-            order_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
+            order_id SERIAL PRIMARY KEY,
+            user_id BIGINT,
             phone_number TEXT,
             otp_link TEXT
         )
     ''')
+    
+    # Settings table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
         )
     ''')
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('number_price', '0.10')")
+    
+    cursor.execute("INSERT INTO settings (key, value) VALUES ('number_price', '0.10') ON CONFLICT (key) DO NOTHING")
     conn.commit()
     conn.close()
 
 def get_number_price():
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT value FROM settings WHERE key = 'number_price'")
     row = cursor.fetchone()
@@ -70,14 +83,14 @@ def get_number_price():
     return float(row[0]) if row else 0.10
 
 def set_number_price(new_price):
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE settings SET value = ? WHERE key = 'number_price'", (str(new_price),))
+    cursor.execute("UPDATE settings SET value = %s WHERE key = 'number_price'", (str(new_price),))
     conn.commit()
     conn.close()
 
 def get_all_users():
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users")
     rows = cursor.fetchall()
@@ -85,7 +98,7 @@ def get_all_users():
     return [r[0] for r in rows]
 
 def get_all_stock():
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, phone_number, otp_link FROM stock")
     rows = cursor.fetchall()
@@ -93,100 +106,85 @@ def get_all_stock():
     return rows
 
 def clear_all_stock():
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM stock")
     conn.commit()
     conn.close()
+
 def save_active_order(user_id, phone_number, otp_link):
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
     clean_phone = phone_number.replace("+", "").strip()
-    cursor.execute("""
-        INSERT INTO active_orders (user_id, phone_number, otp_link) 
-        VALUES (?, ?, ?)
-    """, (user_id, clean_phone, otp_link))
+    cursor.execute(
+        "INSERT INTO active_orders (user_id, phone_number, otp_link) VALUES (%s, %s, %s)",
+        (user_id, clean_phone, otp_link)
+    )
     conn.commit()
     conn.close()
 
 def get_order_by_phone(phone):
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
     clean_phone = phone.replace("+", "").strip()
     cursor.execute("""
         SELECT order_id, user_id, otp_link, phone_number 
         FROM active_orders 
-        WHERE REPLACE(phone_number, '+', '') = ? 
+        WHERE REPLACE(phone_number, '+', '') = %s 
         ORDER BY order_id DESC LIMIT 1
     """, (clean_phone,))
     row = cursor.fetchone()
     conn.close()
     return row
-    
+
 def get_user(user_id):
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username, balance, total_recharge FROM users WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT user_id, username, balance, total_recharge FROM users WHERE user_id = %s", (user_id,))
     row = cursor.fetchone()
     conn.close()
     return row
 
 def add_user(user_id, username):
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+    cursor.execute("INSERT INTO users (user_id, username) VALUES (%s, %s) ON CONFLICT (user_id) DO NOTHING", (user_id, username))
     conn.commit()
     conn.close()
 
 def update_balance(user_id, amount_usd):
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET balance = balance + ?, total_recharge = total_recharge + ? WHERE user_id = ?", (amount_usd, amount_usd, user_id))
+    cursor.execute("UPDATE users SET balance = balance + %s, total_recharge = total_recharge + %s WHERE user_id = %s", (amount_usd, amount_usd, user_id))
     conn.commit()
     conn.close()
 
 def deduct_balance(user_id, amount_usd):
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount_usd, user_id))
+    cursor.execute("UPDATE users SET balance = balance - %s WHERE user_id = %s", (amount_usd, user_id))
     conn.commit()
     conn.close()
 
 def add_stock_item(phone, link):
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO stock (phone_number, otp_link) VALUES (?, ?)", (phone, link))
+    cursor.execute("INSERT INTO stock (phone_number, otp_link) VALUES (%s, %s)", (phone, link))
     conn.commit()
     conn.close()
 
 def pop_stock_item():
-    conn = sqlite3.connect('bot_database.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, phone_number, otp_link FROM stock LIMIT 1")
     row = cursor.fetchone()
     if row:
-        cursor.execute("DELETE FROM stock WHERE id = ?", (row[0],))
+        cursor.execute("DELETE FROM stock WHERE id = %s", (row[0],))
         conn.commit()
         conn.close()
         return row[1], row[2]
     conn.close()
     return None, None
-
-def save_active_order(user_id, phone, link):
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO active_orders (user_id, phone_number, otp_link) VALUES (?, ?, ?)", (user_id, phone, link))
-    conn.commit()
-    conn.close()
-
-def get_order_by_phone(phone):
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT order_id, user_id, otp_link FROM active_orders WHERE phone_number = ? ORDER BY order_id DESC LIMIT 1", (phone,))
-    row = cursor.fetchone()
-    conn.close()
-    return row
-
 def send_message(chat_id, text, reply_markup=None):
     payload = {
         "chat_id": chat_id,

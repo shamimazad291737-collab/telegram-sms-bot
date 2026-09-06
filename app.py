@@ -4,6 +4,7 @@ import requests
 import html
 import threading
 import time
+import re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Environment Variables
@@ -296,7 +297,7 @@ def handle_update(update):
                 send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_keyboard())
                 return
 
-            # Step 3: Receiving Screenshot & Sending Request to Admin with USD Conversion
+            # Step 3: Receiving Screenshot & Sending Request to Admin
             elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_SCREENSHOT":
                 if "photo" in msg:
                     photo_file_id = msg["photo"][-1]["file_id"]
@@ -311,8 +312,6 @@ def handle_update(update):
                         converted_usd = round(amount / BDT_PER_USD, 2)
                         amount_info = f"৳{amount:.2f} BDT (Estimated: ${converted_usd:.2f} USD @ 120 BDT/$)"
 
-                    # Formatting Inline Buttons for Admin Approval
-                    # Compact representation for callback data: appusd_<user_id>_<usd_val>
                     usd_str_clean = f"{converted_usd:.2f}"
                     admin_markup = {
                         "inline_keyboard": [
@@ -348,7 +347,7 @@ def handle_update(update):
                     doc = msg["document"]
                     file_name = doc.get("file_name", "").lower()
                     if not (file_name.endswith(".txt") or file_name.endswith(".csv")):
-                        send_message(chat_id, "❌ <b>দয়া করে শুধুমাত্র .txt অথবা .csv ফাইল আপলোড করুন! PDF ফাইল আপলোড করা যাবে না।</b>", reply_markup=get_back_keyboard())
+                        send_message(chat_id, "❌ <b>দয়া করে শুধুমাত্র .txt অথবা .csv ফাইল আপলোড করুন!</b>", reply_markup=get_back_keyboard())
                         return
 
                     file_id = doc["file_id"]
@@ -382,7 +381,7 @@ def handle_update(update):
                     send_message(chat_id, f"✅ <b>User ID {target_user}-কে ${usd_val:.2f} USD ব্যালেন্স যোগ করা হয়েছে।</b>")
                     send_message(target_user, f"🎉 <b>আপনার ডিপোজিট প্রসেস সফল হয়েছে! ${usd_val:.2f} USD অ্যাকাউন্টে যোগ করা হয়েছে।</b>")
                 except Exception:
-                    send_message(chat_id, "❌ <b>ভুল অ্যামাউন্ট!</b> কেবল ডলারে সংখ্যা লিখুন। (যেমন: 5.00 বা 10)")
+                    send_message(chat_id, "❌ <b>ভুল অ্যামাউন্ট!</b> কেবল ডলারে সংখ্যা লিখুন। (যেমন: 0.21 বা 5.00)")
                 del user_states[user_id]
                 return
 
@@ -415,7 +414,7 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-         # Main Reply Keyboards
+        # Main Reply Keyboards
         if text == "/start":
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
@@ -516,6 +515,7 @@ def handle_update(update):
             )
             edit_message(chat_id, message_id, res_text, reply_markup=markup)
 
+        # FIXED REGEX OTP EXTRACTION
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -524,20 +524,25 @@ def handle_update(update):
                 link = order[2]
                 try:
                     res = requests.get(link, timeout=10)
-                    otp_text = res.text.strip()
-                    if otp_text and "wait" not in otp_text.lower():
+                    raw_text = res.text.strip()
+                    
+                    # Exact 6-digit OTP Pattern Matching
+                    otp_match = re.search(r'\b\d{6}\b', raw_text)
+                    
+                    if otp_match:
+                        otp_code = otp_match.group(0)
                         markup = {
                             "inline_keyboard": [
                                 [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
                             ]
                         }
-                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_text}</code>", reply_markup=markup)
+                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                     else:
                         send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
                 except Exception:
                     send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
 
-        # Deposit Selection Events (Asking for Amount First)
+        # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}
             send_message(chat_id, f"💖 <b>bKash Deposit Selected</b>\n\nকত টাকা (BDT) ডিপোজিট করতে চান লিখে পাঠান:\n<i>(রেট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD)</i>", reply_markup=get_back_keyboard())
@@ -624,7 +629,7 @@ if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot Engine Online with 120 BDT/USD Auto Converter...")
+    print("🚀 Bot Engine Online with Regex OTP Fetcher...")
     offset = 0
     while True:
         try:

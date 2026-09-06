@@ -530,33 +530,45 @@ def handle_update(update):
                 f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন অথবা সরাসরি উপরের লিংকে ঢুকেও কোড দেখতে পারেন।"
             )
             edit_message(chat_id, message_id, res_text, reply_markup=markup)
-
-        # REGEX OTP EXTRACTION
+                    # REGEX OTP EXTRACTION
         elif data.startswith("chk_otp_"):
-            phone = data.replace("chk_otp_", "")
+            phone = data.replace("chk_otp_", "").replace("+", "").strip()
             order = get_order_by_phone(phone)
-            
+
             if order:
                 link = order[2]
                 try:
-                    res = requests.get(link, timeout=10)
-                    raw_text = res.text.strip()
-                    
-                    otp_match = re.search(r'\b\d{6}\b', raw_text)
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    res = requests.get(link, headers=headers, timeout=12)
+                    raw_text = res.text
+
+                    # ৪ থেকে ৮ ডিজিটের যেকোনো ওটিপি বা ড্যাশযুক্ত ওটিপি ধরা
+                    otp_match = re.search(r'\b\d{4,8}\b', raw_text) or re.search(r'\b\d{3}[-\s]\d{3}\b', raw_text)
                     
                     if otp_match:
                         otp_code = otp_match.group(0)
+                    else:
+                        otp_code = None
+
+                    if otp_code:
                         markup = {
                             "inline_keyboard": [
-                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
+                                [{"text": "🛒 Buy Another Number", "callback_data": "buy_number"}]
                             ]
                         }
-                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                        # ইউজারকে বোটের প্রাইভেটে মেসেজ পাঠানো
+                        send_message(chat_id, f"🎂 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                        
+                        # গ্রুপে অটো-ফরওয়ার্ড করার জন্য (আপনার গ্রুপের আইডি বসান)
+                        GROUP_ID = -1003968611537 
+                        send_message(GROUP_ID, f"🔔 <b>নতুন OTP এসেছে!</b>\n📱 <b>নম্বর:</b> <code>+{phone}</code>\n🔑 <b>OTP:</b> <code>{otp_code}</code>")
                     else:
-                        send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
-                except Exception:
-                    send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
-
+                        send_message(chat_id, "⏳ <b>OTP এখনও আসেনি! আবার চেষ্টা করুন।</b>")
+                except Exception as e:
+                    send_message(chat_id, f"⚠️ <b>OTP চেক করতে সমস্যা হয়েছে: {e}</b>")
+                    
         # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BKASH"}

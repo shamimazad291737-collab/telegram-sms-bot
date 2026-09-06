@@ -544,7 +544,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # ADVANCED OTP EXTRACTION
+        # JAVASCRIPT & RAW OTP EXTRACTION FIX
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -558,15 +558,14 @@ def handle_update(update):
                     res = requests.get(link, headers=headers, timeout=10)
                     raw_text = res.text
                     
-                    # HTML and Script Tag Cleansing
-                    clean_text = re.sub(r'<script.*?>.*?</script>', '', raw_text, flags=re.DOTALL)
-                    clean_text = re.sub(r'<[^>]+>', ' ', clean_text)
+                    # Search for 6-digit OTP matches directly from response body or inline scripts
+                    otp_matches = re.findall(r'\b\d{6}\b', raw_text)
                     
-                    # Search 6 digit patterns
-                    otp_matches = re.findall(r'\b\d{6}\b', clean_text)
-                    
-                    # Filter out non-OTP 6 digit numbers
-                    filtered_otps = [code for code in otp_matches if code not in ['111111', '000000', '123456', '169582']]
+                    # Exclude non-OTP numbers (e.g., ports, default phone placeholders)
+                    filtered_otps = [
+                        code for code in otp_matches 
+                        if code not in ['111111', '000000', '123456', '169582'] and not phone.endswith(code)
+                    ]
 
                     if filtered_otps:
                         otp_code = filtered_otps[0]
@@ -576,8 +575,10 @@ def handle_update(update):
                             ]
                         }
                         
+                        # Send OTP to User
                         send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                         
+                        # Forward to OTP Group if configured
                         if OTP_GROUP_ID:
                             group_msg = (
                                 f"🎉 <b>New OTP Received!</b>\n\n"

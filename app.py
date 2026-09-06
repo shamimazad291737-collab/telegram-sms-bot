@@ -16,7 +16,7 @@ BASE_URL = f"https://api.telegram.org/bot{TOKEN}/"
 # Payment Configuration
 BKASH_NUMBER = "01858582881 (Personal)"
 NAGAD_NUMBER = "01858582881 (Personal)"
-BINANCE_PAY_ID = "907194603"
+BINANCE_PAY_ID = "123456789"
 NUMBER_PRICE = 0.10  # Price per USA Number in USD/BDT Equivalent
 
 user_states = {}
@@ -123,13 +123,35 @@ def send_message(chat_id, text, reply_markup=None):
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    requests.post(BASE_URL + "sendMessage", json=payload)
+    return requests.post(BASE_URL + "sendMessage", json=payload).json()
+
+def edit_message(chat_id, message_id, text, reply_markup=None):
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    requests.post(BASE_URL + "editMessageText", json=payload)
+
+def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
+    payload = {
+        "chat_id": chat_id,
+        "photo": photo_file_id,
+        "caption": caption,
+        "parse_mode": "HTML"
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    requests.post(BASE_URL + "sendPhoto", json=payload)
 
 # Keyboard Builder
 def get_main_keyboard(is_admin=False):
     kb = [
         [
-            {"text": "📱 GET NUMBER", "style": "primary"},
+            {"text": "🛒 BUY NUMBER", "style": "primary"},
             {"text": "💳 DEPOSIT", "style": "success"}
         ],
         [
@@ -141,7 +163,7 @@ def get_main_keyboard(is_admin=False):
         kb.append([{"text": "⚙️ ADMIN PANEL", "style": "danger"}])
     return {"keyboard": kb, "resize_keyboard": True}
 
-# Core Logic
+# Core Update Logic
 def handle_update(update):
     if "message" in update:
         msg = update["message"]
@@ -154,7 +176,7 @@ def handle_update(update):
         add_user(user_id, username)
         is_admin = (user_id == ADMIN_ID)
 
-        # Admin File / Stock Handler
+        # Admin File Uploading for Stock
         if is_admin and "document" in msg:
             doc = msg["document"]
             file_id = doc["file_id"]
@@ -173,62 +195,80 @@ def handle_update(update):
                 send_message(chat_id, f"✅ <b>সফলভাবে {count} টি নম্বর স্টকে আপলোড করা হয়েছে!</b>")
                 return
 
-        # Input States
+        # Input State Handling
         if user_id in user_states:
-            state = user_states[user_id]
+            state_data = user_states[user_id]
             
-            # User Sending Deposit Trx/Proof
-            if state.startswith("WAITING_TRX_"):
-                method = state.replace("WAITING_TRX_", "")
-                
-                # Notification for Admin with Approve/Reject Buttons
-                admin_markup = {
-                    "inline_keyboard": [
-                        [
-                            {"text": "✅ Approve", "callback_data": f"dep_app_{user_id}", "style": "success"},
-                            {"text": "❌ Reject", "callback_data": f"dep_rej_{user_id}", "style": "danger"}
-                        ]
-                    ]
+            # Step 1: Receiving TrxID / Order ID
+            if isinstance(state_data, str) and state_data.startswith("WAITING_TRX_"):
+                method = state_data.replace("WAITING_TRX_", "")
+                user_states[user_id] = {
+                    "step": "WAITING_SCREENSHOT",
+                    "method": method,
+                    "trx_id": text
                 }
-                admin_msg = (
-                    f"📥 <b>New Deposit Request ({method})</b>\n\n"
-                    f"👤 <b>User:</b> {html.escape(first_name)} (@{username})\n"
-                    f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-                    f"📝 <b>Sent Details:</b>\n{html.escape(text)}\n\n"
-                    f"স্বীকৃতি বা বাতিলের জন্য নিচের বাটনে চাপ দিন:"
-                )
-                send_message(ADMIN_ID, admin_msg, reply_markup=admin_markup)
-                send_message(chat_id, "✅ <b>আপনার তথ্য অ্যাডমিনের কাছে পাঠানো হয়েছে!</b>\nযাচাই করার পর আপনার রিকোয়েস্ট প্রসেস করা হবে।")
-                del user_states[user_id]
+                send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>")
                 return
 
-            elif state.startswith("ADMIN_APPROVE_AMOUNT_"):
-                target_user = int(state.replace("ADMIN_APPROVE_AMOUNT_", ""))
+            # Step 2: Receiving Screenshot
+            elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_SCREENSHOT":
+                if "photo" in msg:
+                    photo_file_id = msg["photo"][-1]["file_id"]
+                    method = state_data["method"]
+                    trx_id = state_data["trx_id"]
+
+                    admin_markup = {
+                        "inline_keyboard": [
+                            [
+                                {"text": "✅ Approve", "callback_data": f"dep_app_{user_id}", "style": "success"},
+                                {"text": "❌ Reject", "callback_data": f"dep_rej_{user_id}", "style": "danger"}
+                            ]
+                        ]
+                    }
+                    admin_caption = (
+                        f"📥 <b>New Deposit Request ({method})</b>\n\n"
+                        f"👤 <b>User:</b> {html.escape(first_name)} (@{username})\n"
+                        f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
+                        f"🧾 <b>TrxID / Order ID:</b> <code>{html.escape(trx_id)}</code>\n\n"
+                        f"যাচাই করে Approve বা Reject করুন:"
+                    )
+                    
+                    send_photo_to_admin(ADMIN_ID, photo_file_id, admin_caption, reply_markup=admin_markup)
+                    send_message(chat_id, "✅ <b>আপনার তথ্য ও স্ক্রিনশট অ্যাডমিনের কাছে পাঠানো হয়েছে!</b>\nযাচাই করার পর অ্যাকাউন্টে ব্যালেন্স যোগ করা হবে।")
+                    del user_states[user_id]
+                    return
+                else:
+                    send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>")
+                    return
+
+            # Admin Inputting Amount
+            elif isinstance(state_data, str) and state_data.startswith("ADMIN_APPROVE_AMOUNT_"):
+                target_user = int(state_data.replace("ADMIN_APPROVE_AMOUNT_", ""))
                 try:
                     amount = float(text)
                     update_balance(target_user, amount)
-                    send_message(chat_id, f"✅ <b>User ID {target_user}-কে {amount} BDT ব্যালেন্স দেওয়া হয়েছে।</b>")
-                    send_message(target_user, f"🎉 <b>আপনার ডিপোজিট সফল হয়েছে! {amount} BDT অ্যাকাউন্টে যোগ করা হয়েছে।</b>")
+                    send_message(chat_id, f"✅ <b>User ID {target_user}-কে ${amount} ব্যালেন্স যোগ করা হয়েছে।</b>")
+                    send_message(target_user, f"🎉 <b>আপনার ডিপোজিট প্রসেস সফল হয়েছে! ${amount} অ্যাকাউন্টে যোগ করা হয়েছে।</b>")
                 except Exception:
-                    send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল সংখ্যা লিখুন।")
+                    send_message(chat_id, "❌ <b>ভুল অ্যামাউন্ট!</b> কেবল সংখ্যা লিখুন। (যেমন: 10 বা 5.5)")
                 del user_states[user_id]
                 return
 
-        # Regular Menu Inputs
+        # Main Reply Keyboards
         if text == "/start":
-            welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\nনিচের মেনু থেকে আপনার সার্ভিস নির্বাচন করুন:"
+            welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
 
-        elif text == "📱 GET NUMBER":
+        elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🛒 BUY NUMBER", "callback_data": "menu_buy_number", "style": "primary"}]
+                    [{"text": "🟢 WhatsApp Number", "callback_data": "menu_wa", "style": "success"}]
                 ]
             }
-            send_message(chat_id, "<b>নিচের বাটন চেপে নম্বর সেকশনে যান:</b>", reply_markup=markup)
+            send_message(chat_id, "<b>কোন প্ল্যাটফর্মের জন্য নম্বর নিতে চান?</b>", reply_markup=markup)
 
         elif text == "💳 DEPOSIT":
-            dep_text = "💳 <b>Deposit Options</b>\n\nআপনার পেমেন্ট মেথডটি বেছে নিন:"
+            dep_text = "💳 <b>Deposit Options</b>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
             markup = {
                 "inline_keyboard": [
                     [{"text": "💖 bKash", "callback_data": "dep_bkash", "style": "danger"}],
@@ -257,8 +297,8 @@ def handle_update(update):
             msg = (
                 "<b>⚙️ ADMIN PANEL</b>\n\n"
                 "📂 <b>নম্বর ও লিংক আপলোড করতে:</b>\n"
-                "সরাসরি একটি `.txt` বা `.csv` ফাইল পাঠান।\n"
-                "ফাইল ফরম্যাট:\n<code>+1234567890, https://otp-link.com/check</code>"
+                "সরাসরি ফাইল পাঠোন।\n"
+                "ফরম্যাট:\n<code>+1234567890, https://otp-link.com/check</code>"
             )
             send_message(chat_id, msg)
 
@@ -266,56 +306,59 @@ def handle_update(update):
         cb = update["callback_query"]
         cb_id = cb["id"]
         chat_id = cb["message"]["chat"]["id"]
+        message_id = cb["message"]["message_id"]
         user_id = cb["from"]["id"]
         data = cb.get("data", "")
 
         requests.post(BASE_URL + "answerCallbackQuery", data={"callback_query_id": cb_id})
 
-        if data == "menu_buy_number":
+        # Dynamic Single Popup Message Flow (Edit Message in place)
+        if data == "menu_wa":
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🟢 WhatsApp Number", "callback_data": "buy_wa_num", "style": "success"}]
+                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${NUMBER_PRICE})", "callback_data": "confirm_buy_usa", "style": "danger"}],
+                    [{"text": "⬅️ Back", "callback_data": "back_to_services", "style": "primary"}]
                 ]
             }
-            send_message(chat_id, "<b>কোন সোশ্যাল মিডিয়ার জন্য নম্বর নিতে চান?</b>", reply_markup=markup)
+            edit_message(chat_id, message_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${NUMBER_PRICE} / Number</b>", reply_markup=markup)
 
-        elif data == "buy_wa_num":
+        elif data == "back_to_services":
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🇺🇸 Buy USA Number (${NUMBER_PRICE})", "callback_data": "confirm_buy_usa", "style": "danger"}]
+                    [{"text": "🟢 WhatsApp Number", "callback_data": "menu_wa", "style": "success"}]
                 ]
             }
-            send_message(chat_id, f"<b>WhatsApp Service Select করা হয়েছে:</b>\nমূল্য: <b>${NUMBER_PRICE} / Number</b>", reply_markup=markup)
+            edit_message(chat_id, message_id, "<b>কোন প্ল্যাটফর্মের জন্য নম্বর নিতে চান?</b>", reply_markup=markup)
 
         elif data == "confirm_buy_usa":
             u_info = get_user(user_id)
             bal = u_info[2] if u_info else 0.0
 
             if bal < NUMBER_PRICE:
-                send_message(chat_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\nনম্বর কিনতে অন্তত ${NUMBER_PRICE} ব্যালেন্স লাগবে। Deposit সেকশন থেকে রিচার্জ করুন।")
+                edit_message(chat_id, message_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\nনম্বর কিনতে অন্তত ${NUMBER_PRICE} ব্যালেন্স লাগবে। Deposit সেকশন থেকে রিচার্জ করুন।")
                 return
 
             phone, link = pop_stock_item()
             if not phone:
-                send_message(chat_id, "⚠️ <b>দুঃখিত! বর্তমানে পর্যাপ্ত স্টক নেই।</b> কিছুক্ষণ পর আবার চেষ্টা করুন।")
+                edit_message(chat_id, message_id, "⚠️ <b>দুঃখিত! বর্তমানে স্টক ফাঁকা রয়েছে।</b> কিছু সময় পর আবার চেষ্টা করুন।")
                 return
 
             deduct_balance(user_id, NUMBER_PRICE)
             save_active_order(user_id, phone, link)
 
-            # Buy Output Response with Check OTP Button
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}]
+                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}],
+                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                 ]
             }
             res_text = (
                 f"✅ <b>নম্বর বরাদ্দ করা হয়েছে!</b>\n\n"
                 f"📱 <b>USA Number:</b> <code>{phone}</code>\n"
-                f"💰 <b>কানেক্ট করা ফি:</b> ${NUMBER_PRICE}\n\n"
-                f"👉 অ্যাপে নম্বরটি বসিয়ে OTP পাঠান, এরপর নিচের <b>Check OTP</b> বাটনে চাপ দিন।"
+                f"💰 <b>ফি কাটা হয়েছে:</b> ${NUMBER_PRICE}\n\n"
+                f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন।"
             )
-            send_message(chat_id, res_text, reply_markup=markup)
+            edit_message(chat_id, message_id, res_text, reply_markup=markup)
 
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
@@ -327,42 +370,47 @@ def handle_update(update):
                     res = requests.get(link, timeout=10)
                     otp_text = res.text.strip()
                     if otp_text and "wait" not in otp_text.lower():
-                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_text}</code>")
+                        markup = {
+                            "inline_keyboard": [
+                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
+                            ]
+                        }
+                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_text}</code>", reply_markup=markup)
                     else:
                         send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
                 except Exception:
-                    send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> লিংক সংযোগ করা সম্ভব হচ্ছে না।")
+                    send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> সার্ভার রিচ করা যাচ্ছে না।")
 
-        # Deposit Trx Admin Action (Approve / Reject)
-        elif data.startswith("dep_app_"):
-            target_user = int(data.replace("dep_app_", ""))
-            user_states[user_id] = f"ADMIN_APPROVE_AMOUNT_{target_user}"
-            send_message(chat_id, f"<b>User ID {target_user}-এর জন্য কত টাকা যোগ করবেন তা লিখে পাঠান:</b>")
-
-        elif data.startswith("dep_rej_"):
-            target_user = int(data.replace("dep_rej_", ""))
-            send_message(target_user, f"❌ <b>আপনার জমা দেওয়া ডিপোজিট তথ্য ভুল ছিল!</b>\nসঠিক তথ্য প্রদান করুন অথবা সাপোর্ট অ্যাডমিনের সাথে যোগাযোগ করুন: @{SUPPORT_USERNAME}")
-            send_message(chat_id, f"❌ <b>User ID {target_user}-এর ডিপোজিট রিকোয়েস্ট বাতিল করা হয়েছে।</b>")
-
-        # Deposit Channel Selections
+        # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = "WAITING_TRX_BKASH"
-            send_message(chat_id, f"💖 <b>bKash Send Money:</b> <code>{BKASH_NUMBER}</code>\n\nটাকা পাঠিয়ে TrxID এবং স্কিনশটের টেক্সট মেসেজ পাঠোন।")
+            edit_message(chat_id, message_id, f"💖 <b>bKash Send Money:</b> <code>{BKASH_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে মেসেজ করুন:")
 
         elif data == "dep_nagad":
             user_states[user_id] = "WAITING_TRX_NAGAD"
-            send_message(chat_id, f"🟠 <b>Nagad Send Money:</b> <code>{NAGAD_NUMBER}</code>\n\nটাকা পাঠিয়ে TrxID এবং বিস্তারিত মেসেজ পাঠোন।")
+            edit_message(chat_id, message_id, f"🟠 <b>Nagad Send Money:</b> <code>{NAGAD_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে মেসেজ করুন:")
 
         elif data == "dep_binance":
             user_states[user_id] = "WAITING_TRX_BINANCE"
-            send_message(chat_id, f"🟡 <b>Binance Pay ID:</b> <code>{BINANCE_PAY_ID}</code>\n\nUSDT পাঠোনোর পর Pay ID ও ট্রানজাকশন মেসেজ পাঠোন।")
+            edit_message(chat_id, message_id, f"🟡 <b>Binance Pay ID:</b> <code>{BINANCE_PAY_ID}</code>\n\nUSDT পাঠানোর পর আপনার <b>Binance Order ID</b> মেসেজ লিখে পাঠান:")
 
-# Server Listener
+        # Admin Approval Handlers
+        elif data.startswith("dep_app_"):
+            target_user = int(data.replace("dep_app_", ""))
+            user_states[user_id] = f"ADMIN_APPROVE_AMOUNT_{target_user}"
+            send_message(chat_id, f"<b>User ID {target_user}-এর জন্য কত $ যোগ করতে চান লিখে পাঠান:</b>")
+
+        elif data.startswith("dep_rej_"):
+            target_user = int(data.replace("dep_rej_", ""))
+            send_message(target_user, f"❌ <b>আপনার জমা দেওয়া ডিপোজিট প্রুফটি সঠিক নয়!</b>\nদয়া করে সঠিক তথ্য দিন বা সাপোর্ট অ্যাডমিনের সাথে কথা বলুন: @{SUPPORT_USERNAME}")
+            send_message(chat_id, f"❌ <b>User ID {target_user}-এর ডিপোজিট বাতিল করা হয়েছে।</b>")
+
+# Dummy Server Header
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot Service Running Correctly.")
+        self.wfile.write(b"Bot Engine Live.")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -373,7 +421,7 @@ if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot Engine Online...")
+    print("🚀 Bot Engine Online with Clean Edit Flows & Sequential Deposit Steps...")
     offset = 0
     while True:
         try:
@@ -384,4 +432,4 @@ if __name__ == "__main__":
                     threading.Thread(target=handle_update, args=(update,), daemon=True).start()
         except Exception:
             time.sleep(2)
-                
+                    

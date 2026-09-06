@@ -243,12 +243,14 @@ def handle_update(update):
                 user_states[user_id] = "WAITING_ADD_BAL"
                 send_message(chat_id, "➕ <b>ইউজার আইডি ও পরিমাণ পাঠান:</b>\n<code>USER_ID AMOUNT</code>")
 
+# ==========================================
 # Web Server for Render Web Service Port Binding
+# ==========================================
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is active!")
+        self.wfile.write(b"Bot is active and running on Web Service!")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -257,6 +259,8 @@ def run_web_server():
 
 if __name__ == "__main__":
     init_db()
+    
+    # Render Web Service-এর পোর্ট ওপেন রাখার জন্য থ্রেড চালু করা
     threading.Thread(target=run_web_server, daemon=True).start()
     
     print("🚀 Bot is running with Environment Variables...")

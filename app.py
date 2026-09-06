@@ -507,15 +507,17 @@ def handle_update(update):
                     [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                 ]
             }
+            # Message updated to include the direct OTP link
             res_text = (
                 f"✅ <b>নম্বর বরাদ্দ করা হয়েছে!</b>\n\n"
                 f"📱 <b>USA Number:</b> <code>{phone}</code>\n"
+                f"🔗 <b>OTP Link:</b> {link}\n"
                 f"💰 <b>ফি কাটা হয়েছে:</b> ${current_price:.2f} USD\n\n"
-                f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন।"
+                f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন অথবা সরাসরি উপরের লিংকে ঢুকেও কোড দেখতে পারেন।"
             )
             edit_message(chat_id, message_id, res_text, reply_markup=markup)
 
-        # FIXED REGEX OTP EXTRACTION
+        # REGEX OTP EXTRACTION
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -629,7 +631,7 @@ if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot Engine Online with Regex OTP Fetcher...")
+    print("🚀 Bot Engine Online with OTP Link Display...")
     offset = 0
     while True:
         try:

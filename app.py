@@ -100,14 +100,6 @@ def pop_stock_item():
     conn.close()
     return None, None
 
-def count_stock():
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM stock")
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count
-
 def save_active_order(user_id, phone, link):
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
@@ -155,11 +147,11 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
         payload["reply_markup"] = reply_markup
     requests.post(BASE_URL + "sendPhoto", json=payload)
 
-# Keyboards
+# Keyboard Builder
 def get_main_keyboard(is_admin=False):
     kb = [
         [
-            {"text": "🛒 Buy Number", "style": "primary"},
+            {"text": "🛒 BUY NUMBER", "style": "primary"},
             {"text": "💳 DEPOSIT", "style": "success"}
         ],
         [
@@ -171,25 +163,13 @@ def get_main_keyboard(is_admin=False):
         kb.append([{"text": "⚙️ ADMIN PANEL", "style": "danger"}])
     return {"keyboard": kb, "resize_keyboard": True}
 
-def get_buy_number_keyboard():
+def get_back_keyboard():
     kb = [
-        [
-            {"text": "📱 WhatsApp", "style": "success"},
-            {"text": "✈️ Telegram", "style": "primary"}
-        ],
-        [
-            {"text": "🔙 Back", "style": "danger"}
-        ]
+        [{"text": "⬅️ Back", "style": "danger"}]
     ]
     return {"keyboard": kb, "resize_keyboard": True}
 
-def get_back_only_keyboard():
-    kb = [
-        [{"text": "🔙 Back", "style": "danger"}]
-    ]
-    return {"keyboard": kb, "resize_keyboard": True}
-
-# Core Update Handler
+# Core Update Logic
 def handle_update(update):
     if "message" in update:
         msg = update["message"]
@@ -202,8 +182,8 @@ def handle_update(update):
         add_user(user_id, username)
         is_admin = (user_id == ADMIN_ID)
 
-        # Global Back Button Handling
-        if text == "🔙 Back":
+        # Handle Back Button Globally
+        if text in ["⬅️ Back", "🔙 Back"]:
             if user_id in user_states:
                 del user_states[user_id]
             send_message(chat_id, "<b>মূল মেনুতে ফিরে আসা হয়েছে:</b>", reply_markup=get_main_keyboard(is_admin))
@@ -228,7 +208,7 @@ def handle_update(update):
                 send_message(chat_id, f"✅ <b>সফলভাবে {count} টি নম্বর স্টকে আপলোড করা হয়েছে!</b>")
                 return
 
-        # Input State Handling (TrxID & Photo)
+        # Input State Handling
         if user_id in user_states:
             state_data = user_states[user_id]
             
@@ -240,7 +220,7 @@ def handle_update(update):
                     "method": method,
                     "trx_id": text
                 }
-                send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_only_keyboard())
+                send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_keyboard())
                 return
 
             # Step 2: Receiving Screenshot
@@ -271,7 +251,7 @@ def handle_update(update):
                     del user_states[user_id]
                     return
                 else:
-                    send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>", reply_markup=get_back_only_keyboard())
+                    send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>", reply_markup=get_back_keyboard())
                     return
 
             # Admin Inputting Amount
@@ -283,37 +263,23 @@ def handle_update(update):
                     send_message(chat_id, f"✅ <b>User ID {target_user}-কে ${amount} ব্যালেন্স যোগ করা হয়েছে।</b>")
                     send_message(target_user, f"🎉 <b>আপনার ডিপোজিট প্রসেস সফল হয়েছে! ${amount} অ্যাকাউন্টে যোগ করা হয়েছে।</b>")
                 except Exception:
-                    send_message(chat_id, "❌ <b>ভুল অ্যামাউন্ট!</b> কেবল সংখ্যা লিখুন।")
+                    send_message(chat_id, "❌ <b>ভুল অ্যামাউন্ট!</b> কেবল সংখ্যা লিখুন। (যেমন: 10 বা 5.5)")
                 del user_states[user_id]
                 return
 
-        # Regular Menu Messages
+        # Main Reply Keyboards
         if text == "/start":
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
 
-        elif text in ["🛒 Buy Number", "🛒 BUY NUMBER", "📱 GET NUMBER"]:
-            stock_cnt = count_stock()
-            buy_text = (
-                f"🛒 <b>Buy Number</b>\n"
-                f"____________________\n\n"
-                f"<b>Select the platform you need 👇</b>\n\n"
-                f"📱 <b>WhatsApp</b> — 📦 {stock_cnt} in stock • 💰 {NUMBER_PRICE} USDT\n"
-                f"✈️ <b>Telegram</b> — 📦 0 in stock • 💰 0.167 USDT\n"
-                f"____________________"
-            )
-            send_message(chat_id, buy_text, reply_markup=get_buy_number_keyboard())
-
-        elif text in ["📱 WhatsApp", "📱 WhatsApp Number"]:
+        elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${NUMBER_PRICE})", "callback_data": "confirm_buy_usa", "style": "danger"}]
+                    [{"text": "🟢 WhatsApp Number", "callback_data": "menu_wa", "style": "success"}]
                 ]
             }
-            send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${NUMBER_PRICE} / Number</b>", reply_markup=markup)
-
-        elif text == "✈️ Telegram":
-            send_message(chat_id, "⚠️ <b>দুঃখিত! বর্তমানে Telegram এর নম্বর স্টক শেষ।</b>")
+            send_message(chat_id, "<b>কোন প্ল্যাটফর্মের জন্য নম্বর নিতে চান?</b>", reply_markup=get_back_keyboard())
+            send_message(chat_id, "সার্ভিস অপশন:", reply_markup=markup)
 
         elif text == "💳 DEPOSIT":
             dep_text = "💳 <b>Deposit Options</b>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
@@ -324,8 +290,8 @@ def handle_update(update):
                     [{"text": "🟡 Binance (Crypto)", "callback_data": "dep_binance", "style": "success"}]
                 ]
             }
-            send_message(chat_id, dep_text, reply_markup=get_back_only_keyboard())
-            send_message(chat_id, "পেমেন্ট গেটওয়ে:", reply_markup=markup)
+            send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
+            send_message(chat_id, "পেমেন্ট গেটওয়ে:", reply_markup=markup)
 
         elif text == "👤 PROFILE":
             u_info = get_user(user_id)
@@ -337,10 +303,10 @@ def handle_update(update):
                 f"💰 <b>Current Balance:</b> ${bal:.2f}\n"
                 f"📊 <b>Total Recharge:</b> ${tot:.2f}"
             )
-            send_message(chat_id, prof_text)
+            send_message(chat_id, prof_text, reply_markup=get_back_keyboard())
 
         elif text == "🎧 SUPPORT":
-            send_message(chat_id, f"<b>যেকোনো সাহায্যে যোগাযোগ করুন:</b>\n👉 @{SUPPORT_USERNAME}")
+            send_message(chat_id, f"<b>যেকোনো সাহায্যে যোগাযোগ করুন:</b>\n👉 @{SUPPORT_USERNAME}", reply_markup=get_back_keyboard())
 
         elif text == "⚙️ ADMIN PANEL" and is_admin:
             msg = (
@@ -349,7 +315,7 @@ def handle_update(update):
                 "সরাসরি ফাইল পাঠান।\n"
                 "ফরম্যাট:\n<code>+1234567890, https://otp-link.com/check</code>"
             )
-            send_message(chat_id, msg)
+            send_message(chat_id, msg, reply_markup=get_back_keyboard())
 
     elif "callback_query" in update:
         cb = update["callback_query"]
@@ -361,17 +327,26 @@ def handle_update(update):
 
         requests.post(BASE_URL + "answerCallbackQuery", data={"callback_query_id": cb_id})
 
-        if data == "confirm_buy_usa":
+        # Dynamic Single Popup Message Flow (Edit Message in place)
+        if data == "menu_wa":
+            markup = {
+                "inline_keyboard": [
+                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${NUMBER_PRICE})", "callback_data": "confirm_buy_usa", "style": "danger"}]
+                ]
+            }
+            edit_message(chat_id, message_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${NUMBER_PRICE} / Number</b>", reply_markup=markup)
+
+        elif data == "confirm_buy_usa":
             u_info = get_user(user_id)
             bal = u_info[2] if u_info else 0.0
 
             if bal < NUMBER_PRICE:
-                send_message(chat_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\nনম্বর কিনতে অন্তত ${NUMBER_PRICE} ব্যালেন্স লাগবে। Deposit সেকশন থেকে রিচার্জ করুন।")
+                edit_message(chat_id, message_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\nনম্বর কিনতে অন্তত ${NUMBER_PRICE} ব্যালেন্স লাগবে। Deposit সেকশন থেকে রিচার্জ করুন।")
                 return
 
             phone, link = pop_stock_item()
             if not phone:
-                send_message(chat_id, "⚠️ <b>দুঃখিত! বর্তমানে স্টক ফাঁকা রয়েছে।</b> কিছু সময় পর আবার চেষ্টা করুন।")
+                edit_message(chat_id, message_id, "⚠️ <b>দুঃখিত! বর্তমানে স্টক ফাঁকা রয়েছে।</b> কিছু সময় পর আবার চেষ্টা করুন।")
                 return
 
             deduct_balance(user_id, NUMBER_PRICE)
@@ -415,11 +390,11 @@ def handle_update(update):
         # Deposit Selection Events
         elif data == "dep_bkash":
             user_states[user_id] = "WAITING_TRX_BKASH"
-            edit_message(chat_id, message_id, f"💖 <b>bKash Send Money:</b> <code>{BKASH_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে লিখে পাঠান:")
+            edit_message(chat_id, message_id, f"💖 <b>bKash Send Money:</b> <code>{BKASH_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে মেসেজ করুন:")
 
         elif data == "dep_nagad":
             user_states[user_id] = "WAITING_TRX_NAGAD"
-            edit_message(chat_id, message_id, f"🟠 <b>Nagad Send Money:</b> <code>{NAGAD_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে লিখে পাঠান:")
+            edit_message(chat_id, message_id, f"🟠 <b>Nagad Send Money:</b> <code>{NAGAD_NUMBER}</code>\n\nটাকা পাঠানোর পর প্রথমে আপনার <b>TrxID</b> এখানে মেসেজ করুন:")
 
         elif data == "dep_binance":
             user_states[user_id] = "WAITING_TRX_BINANCE"
@@ -436,12 +411,12 @@ def handle_update(update):
             send_message(target_user, f"❌ <b>আপনার জমা দেওয়া ডিপোজিট প্রুফটি সঠিক নয়!</b>\nদয়া করে সঠিক তথ্য দিন বা সাপোর্ট অ্যাডমিনের সাথে কথা বলুন: @{SUPPORT_USERNAME}")
             send_message(chat_id, f"❌ <b>User ID {target_user}-এর ডিপোজিট বাতিল করা হয়েছে।</b>")
 
-# Server Listener
+# Dummy Server Header
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot Service Running Correctly.")
+        self.wfile.write(b"Bot Engine Live.")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -452,7 +427,7 @@ if __name__ == "__main__":
     init_db()
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    print("🚀 Bot Engine Online with Custom Back Keyboard Buttons...")
+    print("🚀 Bot Engine Online with Back Option Enabled...")
     offset = 0
     while True:
         try:

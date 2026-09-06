@@ -5,12 +5,23 @@ import html
 import threading
 import time
 import re
+from flask import Flask
+
+# Flask app initialization for Render Port Binding
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running perfectly!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
 # Environment Variables
 TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0")) if os.environ.get("ADMIN_ID") else 0
 SUPPORT_USERNAME = os.environ.get("SUPPORT_USERNAME", "telegram")
-# গ্রুপে OTP ফরওয়ার্ড করতে Render-এর Environment Variable-এ OTP_GROUP_ID (যেমন: -100123456789) দিতে পারেন
 OTP_GROUP_ID = os.environ.get("OTP_GROUP_ID", "")
 
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}/"
@@ -533,7 +544,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # EXACT ACCURATE OTP EXTRACTION LOGIC
+        # ACCURATE 6-DIGIT OTP EXTRACTION
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -547,13 +558,9 @@ def handle_update(update):
                     res = requests.get(link, headers=headers, timeout=10)
                     raw_text = res.text.strip()
                     
-                    # HTML ট্যাগ রিমুভ করে ক্লিন টেক্সট বের করা
+                    # HTML ট্যাগ বাদ দিয়ে নির্দিষ্ট করে ৬ ডিজিট OTP বের করা
                     clean_text = re.sub(r'<[^>]+>', ' ', raw_text)
-                    
-                    # WhatsApp OTP সব সময় ৬ ডিজিট-এর হয় (যেমন: 711753)
                     otp_matches = re.findall(r'\b\d{6}\b', clean_text)
-                    
-                    # পোর্ট বা স্ট্যাটিক ফিক্সড নম্বর ফিল্টার করার লজিক
                     filtered_otps = [code for code in otp_matches if code not in ['111111', '000000', '123456']]
 
                     if filtered_otps:
@@ -564,10 +571,10 @@ def handle_update(update):
                             ]
                         }
                         
-                        # ইউজারের কাছে সঠিক OTP পাঠানো
+                        # ইউজারকে OTP প্রদান
                         send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                         
-                        # OTP গ্রুপে স্বয়ংক্রিয়ভাবে ফরওয়ার্ড করার লজিক
+                        # OTP গ্রুপে স্বয়ংক্রিয়ভাবে ফরওয়ার্ড করা
                         if OTP_GROUP_ID:
                             group_msg = (
                                 f"🎉 <b>New OTP Received!</b>\n\n"
@@ -660,6 +667,9 @@ def safe_execution_wrapper(upd):
 
 if __name__ == "__main__":
     init_db()
+
+    # Starts background Flask server for Render Port Binding
+    threading.Thread(target=run_flask, daemon=True).start()
 
     print("🚀 Bot Engine Online with Crash Shield...")
     offset = 0

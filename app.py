@@ -544,7 +544,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # JAVASCRIPT & RAW OTP EXTRACTION FIX
+        # ADVANCED API & JAVASCRIPT OTP EXTRACTION FIX
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -553,22 +553,48 @@ def handle_update(update):
                 link = order[2]
                 try:
                     headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+                        'Accept': 'application/json, text/plain, */*'
                     }
-                    res = requests.get(link, headers=headers, timeout=10)
-                    raw_text = res.text
                     
-                    # Search for 6-digit OTP matches directly from response body or inline scripts
-                    otp_matches = re.findall(r'\b\d{6}\b', raw_text)
+                    otp_code = None
                     
-                    # Exclude non-OTP numbers (e.g., ports, default phone placeholders)
-                    filtered_otps = [
-                        code for code in otp_matches 
-                        if code not in ['111111', '000000', '123456', '169582'] and not phone.endswith(code)
-                    ]
+                    # 1. Try JSON API Request (Targeting hidden backend API)
+                    try:
+                        api_link = link.replace("/sms/", "/api/get-sms/").replace("/sms/", "/api/sms/")
+                        if not api_link.endswith(".json"):
+                            api_link_json = link.rstrip('/') + ".json"
+                        else:
+                            api_link_json = api_link
 
-                    if filtered_otps:
-                        otp_code = filtered_otps[0]
+                        api_res = requests.get(api_link_json, headers=headers, timeout=5)
+                        if api_res.status_code == 200:
+                            json_data = api_res.json()
+                            possible_code = str(json_data.get("code") or json_data.get("otp") or json_data.get("sms") or "")
+                            code_match = re.search(r'\b\d{6}\b', possible_code)
+                            if code_match:
+                                otp_code = code_match.group(0)
+                    except Exception:
+                        pass
+
+                    # 2. Direct Web Request Fallback
+                    if not otp_code:
+                        res = requests.get(link, headers=headers, timeout=10)
+                        raw_text = res.text
+                        
+                        # Match all 6-digit numbers in raw text & JS scripts
+                        otp_matches = re.findall(r'\b\d{6}\b', raw_text)
+                        
+                        # Filter out common false positives and port numbers
+                        filtered_otps = [
+                            code for code in otp_matches 
+                            if code not in ['111111', '000000', '123456', '169582', '11111'] and not phone.endswith(code)
+                        ]
+                        
+                        if filtered_otps:
+                            otp_code = filtered_otps[0]
+
+                    if otp_code:
                         markup = {
                             "inline_keyboard": [
                                 [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]

@@ -215,25 +215,25 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
     except Exception as e:
         print(f"Error sending photo: {e}")
 
-# Keyboards
+# Keyboards (Reply Keyboard-এ style প্যারামিটার যুক্ত করা হয়েছে)
 def get_main_keyboard(is_admin=False):
     kb = [
         [
-            {"text": "🛒 BUY NUMBER"},
-            {"text": "💳 DEPOSIT"}
+            {"text": "🛒 BUY NUMBER", "style": "success"},
+            {"text": "💳 DEPOSIT", "style": "primary"}
         ],
         [
-            {"text": "👤 PROFILE"},
-            {"text": "🎧 SUPPORT"}
+            {"text": "👤 PROFILE", "style": "primary"},
+            {"text": "🎧 SUPPORT", "style": "primary"}
         ]
     ]
     if is_admin:
-        kb.append([{"text": "⚙️ ADMIN PANEL"}])
+        kb.append([{"text": "⚙️ ADMIN PANEL", "style": "danger"}])
     return {"keyboard": kb, "resize_keyboard": True}
 
 def get_back_keyboard():
     kb = [
-        [{"text": "⬅️ Back"}]
+        [{"text": "⬅️ Back", "style": "danger"}]
     ]
     return {"keyboard": kb, "resize_keyboard": True}
 
@@ -436,7 +436,7 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-         # Main Reply Keyboards
+        # Main Reply Keyboards
         if text == "/start":
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))

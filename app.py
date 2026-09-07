@@ -219,21 +219,21 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
 def get_main_keyboard(is_admin=False):
     kb = [
         [
-            {"text": "🛒 BUY NUMBER", "style": "primary"},
-            {"text": "💳 DEPOSIT", "style": "success"}
+            {"text": "🛒 BUY NUMBER"},
+            {"text": "💳 DEPOSIT"}
         ],
         [
-            {"text": "👤 PROFILE", "style": "primary"},
-            {"text": "🎧 SUPPORT", "style": "primary"}
+            {"text": "👤 PROFILE"},
+            {"text": "🎧 SUPPORT"}
         ]
     ]
     if is_admin:
-        kb.append([{"text": "⚙️ ADMIN PANEL", "style": "danger"}])
+        kb.append([{"text": "⚙️ ADMIN PANEL"}])
     return {"keyboard": kb, "resize_keyboard": True}
 
 def get_back_keyboard():
     kb = [
-        [{"text": "⬅️ Back", "style": "danger"}]
+        [{"text": "⬅️ Back"}]
     ]
     return {"keyboard": kb, "resize_keyboard": True}
 
@@ -338,11 +338,11 @@ def handle_update(update):
                     admin_markup = {
                         "inline_keyboard": [
                             [
-                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}", "style": "success"},
-                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}", "style": "primary"}
+                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}"},
+                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}"}
                             ],
                             [
-                                {"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}", "style": "danger"}
+                                {"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}"}
                             ]
                         ]
                     }
@@ -444,7 +444,7 @@ def handle_update(update):
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa", "style": "danger"}]
+                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa"}]
                 ]
             }
             send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
@@ -454,9 +454,9 @@ def handle_update(update):
             dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
             markup = {
                 "inline_keyboard": [
-                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash", "style": "danger"}],
-                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad", "style": "primary"}],
-                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance", "style": "success"}]
+                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash"}],
+                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad"}],
+                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance"}]
                 ]
             }
             send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
@@ -485,11 +485,11 @@ def handle_update(update):
             )
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
-                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "danger"}],
-                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "success"}],
-                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
-                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm", "style": "danger"}]
+                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate"}],
+                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast"}],
+                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file"}],
+                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock"}],
+                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm"}]
                 ]
             }
             send_message(chat_id, msg, reply_markup=get_back_keyboard())
@@ -529,8 +529,8 @@ def handle_update(update):
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}],
-                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
+                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}"}],
+                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
                 ]
             }
             res_text = (
@@ -544,79 +544,59 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # ADVANCED API & JAVASCRIPT OTP EXTRACTION FIX
+        # HEADLESS BROWSER (PLAYWRIGHT) OTP EXTRACTION
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
             
             if order:
                 link = order[2]
+                otp_code = None
+                
                 try:
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-                        'Accept': 'application/json, text/plain, */*'
-                    }
+                    from playwright.sync_api import sync_playwright
                     
-                    otp_code = None
-                    
-                    # 1. Try JSON API Request (Targeting hidden backend API)
-                    try:
-                        api_link = link.replace("/sms/", "/api/get-sms/").replace("/sms/", "/api/sms/")
-                        if not api_link.endswith(".json"):
-                            api_link_json = link.rstrip('/') + ".json"
-                        else:
-                            api_link_json = api_link
-
-                        api_res = requests.get(api_link_json, headers=headers, timeout=5)
-                        if api_res.status_code == 200:
-                            json_data = api_res.json()
-                            possible_code = str(json_data.get("code") or json_data.get("otp") or json_data.get("sms") or "")
-                            code_match = re.search(r'\b\d{6}\b', possible_code)
-                            if code_match:
-                                otp_code = code_match.group(0)
-                    except Exception:
-                        pass
-
-                    # 2. Direct Web Request Fallback
-                    if not otp_code:
-                        res = requests.get(link, headers=headers, timeout=10)
-                        raw_text = res.text
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        page = browser.new_page()
                         
-                        # Match all 6-digit numbers in raw text & JS scripts
+                        # Open OTP page inside actual headless chromium browser
+                        page.goto(link, wait_until="networkidle", timeout=15000)
+                        page.wait_for_timeout(2000)
+                        
+                        raw_text = page.inner_text("body")
+                        browser.close()
+                        
+                        # Extract 6 digit OTP from visible webpage text
                         otp_matches = re.findall(r'\b\d{6}\b', raw_text)
-                        
-                        # Filter out common false positives and port numbers
                         filtered_otps = [
                             code for code in otp_matches 
-                            if code not in ['111111', '000000', '123456', '169582', '11111'] and not phone.endswith(code)
+                            if code not in ['111111', '000000', '123456', '169582'] and not phone.endswith(code)
                         ]
                         
                         if filtered_otps:
                             otp_code = filtered_otps[0]
 
-                    if otp_code:
-                        markup = {
-                            "inline_keyboard": [
-                                [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
-                            ]
-                        }
-                        
-                        # Send OTP to User
-                        send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
-                        
-                        # Forward to OTP Group if configured
-                        if OTP_GROUP_ID:
-                            group_msg = (
-                                f"🎉 <b>New OTP Received!</b>\n\n"
-                                f"📱 <b>Number:</b> <code>{phone}</code>\n"
-                                f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>"
-                            )
-                            send_message(OTP_GROUP_ID, group_msg)
-
-                    else:
-                        send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
                 except Exception as e:
-                    send_message(chat_id, "⚠️ <b>OTP চেক করতে সমস্যা হয়েছে!</b> লিঙ্ক থেকে ডেটা আনা যাচ্ছে না।")
+                    print(f"Browser Scraping Error: {e}")
+
+                if otp_code:
+                    markup = {
+                        "inline_keyboard": [
+                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                        ]
+                    }
+                    send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                    
+                    if OTP_GROUP_ID:
+                        group_msg = (
+                            f"🎉 <b>New OTP Received!</b>\n\n"
+                            f"📱 <b>Number:</b> <code>{phone}</code>\n"
+                            f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>"
+                        )
+                        send_message(OTP_GROUP_ID, group_msg)
+                else:
+                    send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
 
         # Deposit Selection Events
         elif data == "dep_bkash":
@@ -659,7 +639,7 @@ def handle_update(update):
         elif data == "admin_delete_stock_confirm" and is_admin:
             markup = {
                 "inline_keyboard": [
-                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]
+                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute"}]
                 ]
             }
             edit_message(chat_id, message_id, "⚠️ <b>আপনি কি নিশ্চিতভাবে সমস্ত স্টক ফাইল/নম্বর মুছে ফেলতে চান?</b>", reply_markup=markup)

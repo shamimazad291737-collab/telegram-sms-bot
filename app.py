@@ -30,7 +30,7 @@ BASE_URL = f"https://api.telegram.org/bot{TOKEN}/"
 BDT_PER_USD = 120.0  # 120 BDT = 1 USD
 BKASH_NUMBER = "01858582881 (Personal)"
 NAGAD_NUMBER = "01858582881 (Personal)"
-BINANCE_PAY_ID = "123456789"
+BINANCE_PAY_ID = "907194603"
 
 user_states = {}
 

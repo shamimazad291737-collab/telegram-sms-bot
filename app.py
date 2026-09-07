@@ -338,11 +338,11 @@ def handle_update(update):
                     admin_markup = {
                         "inline_keyboard": [
                             [
-                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}"},
-                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}"}
+                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}", "style": "success"},
+                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}", "style": "primary"}
                             ],
                             [
-                                {"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}"}
+                                {"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}", "style": "danger"}
                             ]
                         ]
                     }
@@ -444,7 +444,7 @@ def handle_update(update):
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa"}]
+                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa", "style": "danger"}]
                 ]
             }
             send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
@@ -454,9 +454,9 @@ def handle_update(update):
             dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
             markup = {
                 "inline_keyboard": [
-                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash"}],
-                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad"}],
-                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance"}]
+                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash", "style": "danger"}],
+                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad", "style": "primary"}],
+                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance", "style": "success"}]
                 ]
             }
             send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
@@ -485,11 +485,11 @@ def handle_update(update):
             )
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate"}],
-                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast"}],
-                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file"}],
-                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock"}],
-                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm"}]
+                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
+                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "primary"}],
+                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "success"}],
+                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
+                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm", "style": "danger"}]
                 ]
             }
             send_message(chat_id, msg, reply_markup=get_back_keyboard())
@@ -529,8 +529,8 @@ def handle_update(update):
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}"}],
-                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}],
+                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                 ]
             }
             res_text = (
@@ -583,7 +583,7 @@ def handle_update(update):
                 if otp_code:
                     markup = {
                         "inline_keyboard": [
-                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                         ]
                     }
                     send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
@@ -639,7 +639,7 @@ def handle_update(update):
         elif data == "admin_delete_stock_confirm" and is_admin:
             markup = {
                 "inline_keyboard": [
-                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute"}]
+                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]
                 ]
             }
             edit_message(chat_id, message_id, "⚠️ <b>আপনি কি নিশ্চিতভাবে সমস্ত স্টক ফাইল/নম্বর মুছে ফেলতে চান?</b>", reply_markup=markup)

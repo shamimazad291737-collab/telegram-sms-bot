@@ -86,29 +86,6 @@ def set_number_price(new_price):
     conn.commit()
     conn.close()
 
-def get_all_users():
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users")
-    rows = cursor.fetchall()
-    conn.close()
-    return [r[0] for r in rows]
-
-def get_all_stock():
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, phone_number, otp_link FROM stock")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
-def clear_all_stock():
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM stock")
-    conn.commit()
-    conn.close()
-
 def get_user(user_id):
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
@@ -117,31 +94,18 @@ def get_user(user_id):
     conn.close()
     return row
 
-def add_user(user_id, username):
+def update_balance(user_id, amount):
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, balance, total_recharge) VALUES (?, 0.0, 0.0)", (user_id,))
+    cursor.execute("UPDATE users SET balance = balance + ?, total_recharge = total_recharge + ? WHERE user_id = ?", (amount, amount, user_id))
     conn.commit()
     conn.close()
 
-def update_balance(user_id, amount_usd):
+def deduct_balance(user_id, amount):
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET balance = balance + ?, total_recharge = total_recharge + ? WHERE user_id = ?", (amount_usd, amount_usd, user_id))
-    conn.commit()
-    conn.close()
-
-def deduct_balance(user_id, amount_usd):
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount_usd, user_id))
-    conn.commit()
-    conn.close()
-
-def add_stock_item(phone, link):
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO stock (phone_number, otp_link) VALUES (?, ?)", (phone, link))
+    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, user_id))
     conn.commit()
     conn.close()
 
@@ -173,82 +137,100 @@ def get_order_by_phone(phone):
     conn.close()
     return row
 
+def add_stock_item(phone, link):
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO stock (phone_number, otp_link) VALUES (?, ?)", (phone, link))
+    conn.commit()
+    conn.close()
+
+def get_all_users():
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    rows = cursor.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+def get_all_stock():
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, phone_number, otp_link FROM stock")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def clear_all_stock():
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM stock")
+    conn.commit()
+    conn.close()
+
+# Telegram Helper Functions
 def send_message(chat_id, text, reply_markup=None):
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML"
-    }
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
         payload["reply_markup"] = reply_markup
     try:
-        return requests.post(BASE_URL + "sendMessage", json=payload, timeout=10).json()
+        res = requests.post(BASE_URL + "sendMessage", json=payload, timeout=10)
+        return res.json()
     except Exception as e:
         print(f"Error sending message: {e}")
         return {}
 
 def edit_message(chat_id, message_id, text, reply_markup=None):
-    payload = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "text": text,
-        "parse_mode": "HTML"
-    }
+    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
         payload["reply_markup"] = reply_markup
     try:
-        requests.post(BASE_URL + "editMessageText", json=payload, timeout=10)
+        res = requests.post(BASE_URL + "editMessageText", json=payload, timeout=10)
+        return res.json()
     except Exception as e:
         print(f"Error editing message: {e}")
+        return {}
 
-def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
-    payload = {
-        "chat_id": chat_id,
-        "photo": photo_file_id,
-        "caption": caption,
-        "parse_mode": "HTML"
-    }
+def send_photo_to_admin(admin_id, photo_file_id, caption, reply_markup=None):
+    payload = {"chat_id": admin_id, "photo": photo_file_id, "caption": caption, "parse_mode": "HTML"}
     if reply_markup:
         payload["reply_markup"] = reply_markup
     try:
         requests.post(BASE_URL + "sendPhoto", json=payload, timeout=10)
     except Exception as e:
-        print(f"Error sending photo: {e}")
+        print(f"Error sending photo to admin: {e}")
 
-# Keyboards
 def get_main_keyboard(is_admin=False):
     kb = [
-        [
-            {"text": "🛒 BUY NUMBER"},
-            {"text": "💳 DEPOSIT"}
-        ],
-        [
-            {"text": "👤 PROFILE"},
-            {"text": "🎧 SUPPORT"}
-        ]
+        ["🛒 BUY NUMBER", "💳 DEPOSIT"],
+        ["👤 PROFILE", "🎧 SUPPORT"]
     ]
     if is_admin:
-        kb.append([{"text": "⚙️ ADMIN PANEL"}])
-    return {"keyboard": kb, "resize_keyboard": True}
+        kb.append(["⚙️ ADMIN PANEL"])
+    return {"keyboard": [[{"text": b} for b in row] for row in kb], "resize_keyboard": True}
 
 def get_back_keyboard():
-    kb = [
-        [{"text": "⬅️ Back"}]
-    ]
-    return {"keyboard": kb, "resize_keyboard": True}
+    return {"keyboard": [[{"text": "⬅️ Back"}]], "resize_keyboard": True}
 
-# Core Update Logic
+
+# Main Update Handler
 def handle_update(update):
     if "message" in update:
         msg = update["message"]
         chat_id = msg["chat"]["id"]
         user_id = msg["from"]["id"]
-        username = msg["from"].get("username", "NoUsername")
-        first_name = msg["from"].get("first_name", "User")
         text = msg.get("text", "")
-
-        add_user(user_id, username)
+        first_name = msg["from"].get("first_name", "User")
+        username = msg["from"].get("username", "NoUsername")
         is_admin = (user_id == ADMIN_ID)
+
+        # Register User
+        conn = sqlite3.connect('bot_database.db')
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO users (user_id, username, balance, total_recharge) VALUES (?, ?, 0.0, 0.0)", (user_id, username))
+        cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
+        conn.commit()
+        conn.close()
+
         current_price = get_number_price()
 
         # Handle Back Button Globally
@@ -338,11 +320,11 @@ def handle_update(update):
                     admin_markup = {
                         "inline_keyboard": [
                             [
-                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}"},
-                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}"}
+                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}", "style": "success"},
+                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}", "style": "primary"}
                             ],
                             [
-                                {"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}"}
+                                {"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}", "style": "danger"}
                             ]
                         ]
                     }
@@ -444,7 +426,7 @@ def handle_update(update):
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa"}]
+                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa", "style": "success"}]
                 ]
             }
             send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
@@ -454,9 +436,9 @@ def handle_update(update):
             dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
             markup = {
                 "inline_keyboard": [
-                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash"}],
-                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad"}],
-                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance"}]
+                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash", "style": "primary"}],
+                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad", "style": "primary"}],
+                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance", "style": "success"}]
                 ]
             }
             send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
@@ -485,11 +467,11 @@ def handle_update(update):
             )
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate"}],
-                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast"}],
-                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file"}],
-                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock"}],
-                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm"}]
+                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
+                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "primary"}],
+                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "primary"}],
+                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
+                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm", "style": "danger"}]
                 ]
             }
             send_message(chat_id, msg, reply_markup=get_back_keyboard())
@@ -529,8 +511,8 @@ def handle_update(update):
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}"}],
-                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}],
+                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                 ]
             }
             res_text = (
@@ -544,7 +526,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # UPDATED API-BASED DYNAMIC OTP SCRAPING
+        # UPDATED API-BASED DYNAMIC OTP SCRAPING WITH USA FLAG
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -591,14 +573,15 @@ def handle_update(update):
                 if otp_code:
                     markup = {
                         "inline_keyboard": [
-                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                         ]
                     }
-                    send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                    # ওটিপির উপরে ইউএস ফ্ল্যাগ (🇺🇸) যুক্ত করা হয়েছে
+                    send_message(chat_id, f"🇺🇸 <b>USA Number OTP</b>\n\n📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                     
                     if OTP_GROUP_ID:
                         group_msg = (
-                            f"🎉 <b>New OTP Received!</b>\n\n"
+                            f"🇺🇸 🎉 <b>New USA OTP Received!</b>\n\n"
                             f"📱 <b>Number:</b> <code>{phone}</code>\n"
                             f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>"
                         )
@@ -647,7 +630,7 @@ def handle_update(update):
         elif data == "admin_delete_stock_confirm" and is_admin:
             markup = {
                 "inline_keyboard": [
-                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute"}]
+                    [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]
                 ]
             }
             edit_message(chat_id, message_id, "⚠️ <b>আপনি কি নিশ্চিতভাবে সমস্ত স্টক ফাইল/নম্বর মুছে ফেলতে চান?</b>", reply_markup=markup)

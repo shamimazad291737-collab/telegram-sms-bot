@@ -436,7 +436,7 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-        # Main Reply Keyboards
+     # Main Reply Keyboards
         if text == "/start":
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
@@ -544,7 +544,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # UPDATED HIGH-SPEED DIRECT OTP SCRAPING
+        # UPDATED DYNAMIC REAL-TIME OTP SCRAPING
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -555,12 +555,24 @@ def handle_update(update):
                 
                 try:
                     headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
                     }
-                    response = requests.get(link, headers=headers, timeout=10)
+                    
+                    # 1. Fetch main page response
+                    response = requests.get(link, headers=headers, timeout=8)
                     raw_text = response.text
 
-                    # Find 6-digit OTP code from page source
+                    # 2. Fetch direct API endpoint if server updates dynamically
+                    api_link = link.rstrip('/') + '/get' if not link.endswith('.json') else link
+                    try:
+                        api_res = requests.get(api_link, headers=headers, timeout=5)
+                        if api_res.status_code == 200:
+                            raw_text += " " + api_res.text
+                    except Exception:
+                        pass
+
+                    # 3. Find 6-digit OTP code from response text
                     otp_matches = re.findall(r'\b\d{6}\b', raw_text)
                     clean_phone = re.sub(r'\D', '', phone)
                     

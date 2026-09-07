@@ -317,6 +317,8 @@ def handle_update(update):
                         amount_info = f"৳{amount:.2f} BDT (Estimated: ${converted_usd:.2f} USD @ 120 BDT/$)"
 
                     usd_str_clean = f"{converted_usd:.2f}"
+                    
+                    # COLORED BUTTONS FOR ADMIN APPROVAL
                     admin_markup = {
                         "inline_keyboard": [
                             [
@@ -418,12 +420,13 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-        # Main Reply Keyboards
+         # Main Reply Keyboards
         if text == "/start":
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
 
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
+            # GREEN SUCCESS BUTTON FOR BUYING NUMBER
             markup = {
                 "inline_keyboard": [
                     [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa", "style": "success"}]
@@ -433,7 +436,8 @@ def handle_update(update):
             send_message(chat_id, "সার্ভিস অপশন:", reply_markup=markup)
 
         elif text == "💳 DEPOSIT":
-            dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
+            dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(BDT_PER_USD)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমент মেথডটি বেছে নিন:"
+            # COLORED BUTTONS FOR PAYMENT GATEWAYS
             markup = {
                 "inline_keyboard": [
                     [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash", "style": "primary"}],
@@ -509,6 +513,7 @@ def handle_update(update):
             deduct_balance(user_id, current_price)
             save_active_order(user_id, phone, link)
 
+            # COLORED CHECK OTP AND BUY ANOTHER BUTTONS
             markup = {
                 "inline_keyboard": [
                     [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "success"}],
@@ -526,7 +531,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # UPDATED API-BASED DYNAMIC OTP SCRAPING WITH USA FLAG
+        # UPDATED API-BASED DYNAMIC OTP SCRAPING WITH USA FLAG 🇺🇸
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -543,21 +548,17 @@ def handle_update(update):
                         "Pragma": "no-cache"
                     }
 
-                    # Convert UI Link to Dynamic Backend API Endpoint
                     if "/sms/" in link:
                         api_link = link.replace("/sms/", "/api/sms/")
                     else:
                         api_link = link
 
-                    # 1. Fetch directly from API Endpoint
                     response = requests.get(api_link, headers=headers, timeout=8)
                     api_text = response.text.strip()
 
-                    # Check if response is purely numbers (OTP code)
                     if re.match(r'^\d{3,10}$', api_text):
                         otp_code = api_text
                     else:
-                        # Fallback: Scrape main page HTML if API fails
                         main_res = requests.get(link, headers=headers, timeout=8)
                         matches = re.findall(r'\b\d{6}\b', main_res.text)
                         clean_phone = re.sub(r'\D', '', phone)
@@ -576,7 +577,7 @@ def handle_update(update):
                             [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
                         ]
                     }
-                    # ওটিপির উপরে ইউএস ফ্ল্যাগ (🇺🇸) যুক্ত করা হয়েছে
+                    # ইউএস ফ্ল্যাগসহ মেসেজ
                     send_message(chat_id, f"🇺🇸 <b>USA Number OTP</b>\n\n📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                     
                     if OTP_GROUP_ID:

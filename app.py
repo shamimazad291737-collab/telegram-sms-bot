@@ -43,7 +43,7 @@ WEB_PANEL_HTML = """
 <body>
     <div class="card">
         <h2>📱 Stock File Upload</h2>
-        <p>Upload .txt file containing line by line:<br><code>+1234567890 http://otp-link.com</code></p>
+        <p>Upload .txt file containing line by line:<br><code>+1234567890 http://169.58.215.134:11111/sms/wa-xxx/6</code></p>
         <form id="uploadForm">
             <label for="fileInput">📁 Choose .txt File</label>
             <input type="file" id="fileInput" accept=".txt" required onchange="showFileName()">
@@ -264,28 +264,41 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
     except Exception as e:
         print(f"Error sending photo: {e}")
 
-# OTP Checker Engine
+# Optimized OTP Checker Engine for IP & Port Links
 def fetch_otp_from_url(phone, link):
     session = requests.Session()
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Cache-Control": "no-cache"
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection": "keep-alive"
     })
+    
     clean_phone = re.sub(r'\D', '', phone)
+    
     try:
-        res = session.get(link, timeout=5)
-        page_text = res.text
-        otp_matches = re.findall(r'\b\d{6}\b', page_text)
-        filtered_otps = [code for code in otp_matches if code not in ['111111', '000000', '123456', '169582', '111110'] and code not in clean_phone]
-        if filtered_otps:
-            return filtered_otps[0]
+        res = session.get(link, timeout=12)
+        page_text = res.text.strip()
+
+        if not page_text:
+            return None
+
+        # Look for 6-digit OTPs or formatted codes (e.g., 123-456 or 123 456)
+        raw_matches = re.findall(r'\b\d{3}[- ]?\d{3}\b|\b\d{6}\b', page_text)
+
+        for match in raw_matches:
+            clean_code = re.sub(r'\D', '', match)
+            # Ignore dummy test codes and phone number digits
+            if clean_code not in ['111111', '000000', '123456', '169582', '111110'] and clean_code not in clean_phone:
+                return clean_code
+
     except Exception as e:
-        print(f"OTP Fetch Error: {e}")
+        print(f"OTP Fetch Error [{link}]: {e}")
+        
     return None
 
 def background_otp_listener(user_id, phone, link):
-    for _ in range(60): # 2 Minutes Polling
+    for _ in range(60): # 2 Minutes Auto Check Cycle
         otp_code = fetch_otp_from_url(phone, link)
         if otp_code:
             markup = {"inline_keyboard": [[{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]]}
@@ -461,7 +474,8 @@ def handle_update(update):
                 ]
             }
             
-            msg_text = f"✅ <b>নম্বর বরাদ্দ করা হয়েছে!</b>\n\n📱 <b>Number:</b> <code>{phone}</code>\n🔗 <b>OTP Link:</b> <code>{link}</code>\n\n💰 <b>ফি কাটা হয়েছে:</b> ${current_price:.2f} USD\n\n⚡ <b>ওটিপি চেক করতে 'Check OTP' বাটনে ক্লিক করুন।</b>"
+            # Clickable HTML URL link format added
+            msg_text = f"✅ <b>নম্বর বরাদ্দ করা হয়েছে!</b>\n\n📱 <b>Number:</b> <code>{phone}</code>\n🔗 <b>OTP Link:</b> <a href=\"{link}\">{link}</a>\n\n💰 <b>ফি কাটা হয়েছে:</b> ${current_price:.2f} USD\n\n⚡ <b>লিংকে ক্লিক করে ব্রাউজারে খুলতে পারবেন অথবা নিচে 'Check OTP' চাপুন।</b>"
             send_message(chat_id, msg_text, reply_markup=markup)
             
             # Auto Polling Background Thread

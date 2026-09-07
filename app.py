@@ -219,21 +219,21 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
 def get_main_keyboard(is_admin=False):
     kb = [
         [
-            {"text": "🛒 BUY NUMBER"},
-            {"text": "💳 DEPOSIT"}
+            {"text": "🛒 BUY NUMBER", "style": "primary"},
+            {"text": "💳 DEPOSIT", "style": "success"}
         ],
         [
-            {"text": "👤 PROFILE"},
-            {"text": "🎧 SUPPORT"}
+            {"text": "👤 PROFILE", "style": "primary"},
+            {"text": "🎧 SUPPORT", "style": "primary"}
         ]
     ]
     if is_admin:
-        kb.append([{"text": "⚙️ ADMIN PANEL"}])
+        kb.append([{"text": "⚙️ ADMIN PANEL", "style": "danger"}])
     return {"keyboard": kb, "resize_keyboard": True}
 
 def get_back_keyboard():
     kb = [
-        [{"text": "⬅️ Back"}]
+        [{"text": "⬅️ Back", "style": "danger"}]
     ]
     return {"keyboard": kb, "resize_keyboard": True}
 
@@ -486,7 +486,7 @@ def handle_update(update):
             markup = {
                 "inline_keyboard": [
                     [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
-                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "primary"}],
+                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "danger"}],
                     [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "success"}],
                     [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
                     [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm", "style": "danger"}]
@@ -544,7 +544,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # HEADLESS BROWSER (PLAYWRIGHT) OTP EXTRACTION
+        # REAL BROWSER (PLAYWRIGHT) OTP EXTRACTION INTEGRATED
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -554,20 +554,24 @@ def handle_update(update):
                 otp_code = None
                 
                 try:
+                    # Async browser execution inside python threading
                     from playwright.sync_api import sync_playwright
                     
                     with sync_playwright() as p:
                         browser = p.chromium.launch(headless=True)
                         page = browser.new_page()
                         
-                        # Open OTP page inside actual headless chromium browser
+                        # Open the OTP page in a real virtual browser
                         page.goto(link, wait_until="networkidle", timeout=15000)
+                        
+                        # Wait 2 seconds for JS/Sockets to fetch OTP
                         page.wait_for_timeout(2000)
                         
+                        # Get visible text on page
                         raw_text = page.inner_text("body")
                         browser.close()
                         
-                        # Extract 6 digit OTP from visible webpage text
+                        # Find 6-digit OTP code from page text
                         otp_matches = re.findall(r'\b\d{6}\b', raw_text)
                         filtered_otps = [
                             code for code in otp_matches 
@@ -583,7 +587,7 @@ def handle_update(update):
                 if otp_code:
                     markup = {
                         "inline_keyboard": [
-                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "primary"}]
+                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
                         ]
                     }
                     send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)

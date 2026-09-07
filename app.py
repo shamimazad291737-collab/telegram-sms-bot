@@ -544,7 +544,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # REAL BROWSER (PLAYWRIGHT) OTP EXTRACTION INTEGRATED
+        # UPDATED HIGH-SPEED DIRECT OTP SCRAPING
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -554,35 +554,26 @@ def handle_update(update):
                 otp_code = None
                 
                 try:
-                    # Async browser execution inside python threading
-                    from playwright.sync_api import sync_playwright
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    response = requests.get(link, headers=headers, timeout=10)
+                    raw_text = response.text
+
+                    # Find 6-digit OTP code from page source
+                    otp_matches = re.findall(r'\b\d{6}\b', raw_text)
+                    clean_phone = re.sub(r'\D', '', phone)
                     
-                    with sync_playwright() as p:
-                        browser = p.chromium.launch(headless=True)
-                        page = browser.new_page()
-                        
-                        # Open the OTP page in a real virtual browser
-                        page.goto(link, wait_until="networkidle", timeout=15000)
-                        
-                        # Wait 2 seconds for JS/Sockets to fetch OTP
-                        page.wait_for_timeout(2000)
-                        
-                        # Get visible text on page
-                        raw_text = page.inner_text("body")
-                        browser.close()
-                        
-                        # Find 6-digit OTP code from page text
-                        otp_matches = re.findall(r'\b\d{6}\b', raw_text)
-                        filtered_otps = [
-                            code for code in otp_matches 
-                            if code not in ['111111', '000000', '123456', '169582'] and not phone.endswith(code)
-                        ]
-                        
-                        if filtered_otps:
-                            otp_code = filtered_otps[0]
+                    filtered_otps = []
+                    for code in otp_matches:
+                        if code not in ['111111', '000000', '123456', '169582', '111110'] and code not in clean_phone:
+                            filtered_otps.append(code)
+                    
+                    if filtered_otps:
+                        otp_code = filtered_otps[0]
 
                 except Exception as e:
-                    print(f"Browser Scraping Error: {e}")
+                    print(f"OTP Scraping Error: {e}")
 
                 if otp_code:
                     markup = {

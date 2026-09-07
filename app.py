@@ -216,7 +216,7 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
     except Exception as e:
         print(f"Error sending photo: {e}")
 
-# Headless Browser Playwright Scraper Function
+# Headless Browser Playwright Scraper Function (Updated 10s wait & strict scraper)
 def fetch_otp_via_browser(url, phone):
     otp_code = None
     try:
@@ -224,19 +224,22 @@ def fetch_otp_via_browser(url, phone):
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
             page = browser.new_page()
             
-            # Go to link and wait for network idle to allow JS polling
-            page.goto(url, timeout=15000, wait_until="networkidle")
-            page.wait_for_timeout(3000) # Wait 3 seconds for JS render
+            # Go to link
+            page.goto(url, timeout=20000)
             
-            page_content = page.content()
-            page_text = page.inner_text("body")
-            raw_data = page_content + " " + page_text
-
-            otp_matches = re.findall(r'\b\d{6}\b', raw_data)
+            # Wait 10 seconds for real-time JavaScript polling to receive OTP
+            page.wait_for_timeout(10000)
+            
+            # Extract text content from full body
+            raw_text = page.inner_text("body")
+            
+            # Find all 6-digit numeric codes
+            otp_matches = re.findall(r'\b\d{6}\b', raw_text)
             clean_phone = re.sub(r'\D', '', phone)
 
             filtered_otps = []
             for code in otp_matches:
+                # Exclude dummy numbers and phone fragments
                 if code not in ['111111', '000000', '123456', '169582', '111110'] and code not in clean_phone:
                     filtered_otps.append(code)
 
@@ -577,14 +580,14 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # UPDATED REAL-TIME PLAYWRIGHT BROWSER SCRAPING
+        # UPDATED REAL-TIME PLAYWRIGHT BROWSER SCRAPING (10s WAIT)
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
             
             if order:
                 link = order[2]
-                send_message(chat_id, "🔍 <b>ব্রাউজার চেক করা হচ্ছে, অনুগ্রহ করে ৩-৪ সেকেন্ড অপেক্ষা করুন...</b>")
+                send_message(chat_id, "🔍 <b>ব্রাউজার চেক করা হচ্ছে, ১০ সেকেন্ড অপেক্ষা করুন...</b>")
                 
                 # Fetching OTP via Headless Playwright Chrome
                 otp_code = fetch_otp_via_browser(link, phone)

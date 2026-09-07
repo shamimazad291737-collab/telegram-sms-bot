@@ -34,6 +34,15 @@ BINANCE_PAY_ID = "123456789"
 
 user_states = {}
 
+# Helper Function: OTP গ্রুপের জন্য ফোন নম্বরের মাঝখান থেকে ২ ডিজিট কেটে RX বসানো
+def mask_phone_number(phone):
+    clean_phone = phone.strip()
+    # যদি নম্বর ৮ অক্ষরের চেয়ে বড় হয় তবে মাঝখানের ২টি ডিজিট বদলে RX বসবে
+    if len(clean_phone) > 6:
+        mid = len(clean_phone) // 2
+        return clean_phone[:mid-1] + "RX" + clean_phone[mid+1:]
+    return clean_phone
+
 # Database Initialization
 def init_db():
     conn = sqlite3.connect('bot_database.db')
@@ -215,7 +224,7 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
     except Exception as e:
         print(f"Error sending photo: {e}")
 
-# Keyboards (Reply Keyboard-এ style প্যারামিটার যুক্ত করা হয়েছে)
+# Keyboards
 def get_main_keyboard(is_admin=False):
     kb = [
         [
@@ -544,7 +553,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # UPDATED API-BASED DYNAMIC OTP SCRAPING
+        # OTP Dynamic Scraping
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -561,21 +570,17 @@ def handle_update(update):
                         "Pragma": "no-cache"
                     }
 
-                    # Convert UI Link to Dynamic Backend API Endpoint
                     if "/sms/" in link:
                         api_link = link.replace("/sms/", "/api/sms/")
                     else:
                         api_link = link
 
-                    # 1. Fetch directly from API Endpoint
                     response = requests.get(api_link, headers=headers, timeout=8)
                     api_text = response.text.strip()
 
-                    # Check if response is purely numbers (OTP code)
                     if re.match(r'^\d{3,10}$', api_text):
                         otp_code = api_text
                     else:
-                        # Fallback: Scrape main page HTML if API fails
                         main_res = requests.get(link, headers=headers, timeout=8)
                         matches = re.findall(r'\b\d{6}\b', main_res.text)
                         clean_phone = re.sub(r'\D', '', phone)
@@ -594,12 +599,15 @@ def handle_update(update):
                             [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
                         ]
                     }
+                    # ১. ইউজারের ব্যক্তিগত বোট চ্যাটে সম্পূর্ণ নম্বর সহ OTP যাবে
                     send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
                     
+                    # ২. OTP গ্রুপে পাঠানোর সময় নম্বরটির মাঝের ২ সংখ্যা RX দিয়ে ঢেকে দেওয়া হচ্ছে
                     if OTP_GROUP_ID:
+                        masked_num = mask_phone_number(phone)
                         group_msg = (
                             f"🎉 <b>New OTP Received!</b>\n\n"
-                            f"📱 <b>Number:</b> <code>{phone}</code>\n"
+                            f"📱 <b>Number:</b> <code>{masked_num}</code>\n"
                             f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>"
                         )
                         send_message(OTP_GROUP_ID, group_msg)
@@ -686,7 +694,6 @@ def safe_execution_wrapper(upd):
 if __name__ == "__main__":
     init_db()
 
-    # Starts background Flask server for Render Port Binding
     threading.Thread(target=run_flask, daemon=True).start()
 
     print("🚀 Bot Engine Online with Crash Shield...")

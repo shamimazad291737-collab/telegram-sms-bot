@@ -5,7 +5,7 @@ import html
 import threading
 import time
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask
 
 # Flask app initialization for Render Port Binding
@@ -200,13 +200,24 @@ def update_order_otp(phone, otp_code):
     conn.commit()
     conn.close()
 
-def get_user_orders(user_id):
+def get_user_orders_24h(user_id):
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT phone_number, otp_code, purchase_date, otp_link FROM active_orders WHERE user_id = ? ORDER BY order_id DESC LIMIT 20", (user_id,))
+    cursor.execute("SELECT phone_number, otp_code, purchase_date, otp_link FROM active_orders WHERE user_id = ? ORDER BY order_id DESC", (user_id,))
     rows = cursor.fetchall()
     conn.close()
-    return rows
+    
+    recent_orders = []
+    now = datetime.now()
+    for row in rows:
+        try:
+            p_date = datetime.strptime(row[2], "%d-%b-%Y %I:%M %p")
+            if now - p_date <= timedelta(hours=24):
+                recent_orders.append(row)
+        except Exception:
+            recent_orders.append(row)
+            
+    return recent_orders
 
 def get_order_by_phone(phone):
     conn = sqlite3.connect('bot_database.db')
@@ -463,18 +474,7 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            # Admin Rate Change
-            elif isinstance(state_data, str) and state_data == "ADMIN_SET_PRICE":
-                try:
-                    new_p = float(text)
-                    set_number_price(new_p)
-                    send_message(chat_id, f"✅ <b>WhatsApp নম্বর মূল্য কাস্টমাইজ সফল হয়েছে!</b>\nবর্তমান রেট: <b>${new_p:.2f} USD</b>", reply_markup=get_main_keyboard(is_admin))
-                except Exception:
-                    send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল রেটের সংখ্যা লিখুন। (যেমন: 0.12)")
-                del user_states[user_id]
-                return
-
-            # Admin Broadcast
+             # Admin Broadcast
             elif isinstance(state_data, str) and state_data == "ADMIN_BROADCAST":
                 all_users = get_all_users()
                 success, failed = 0, 0
@@ -677,7 +677,7 @@ def handle_update(update):
             markup = {"inline_keyboard": buttons}
             send_message(chat_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস ও নম্বর হিস্ট্রি দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
 
-        # Admin Inspect Specific User History, OTP Links & Details
+        # Admin Inspect Specific User History, OTP Links & Details (Last 24 Hours)
         elif data.startswith("inspect_u_") and is_admin:
             target_u_id = int(data.replace("inspect_u_", ""))
             u_info = get_user(target_u_id)
@@ -686,20 +686,20 @@ def handle_update(update):
                 send_message(chat_id, "❌ <b>ইউজার পাওয়া যায়নি!</b>")
                 return
 
-            orders = get_user_orders(target_u_id)
+            orders = get_user_orders_24h(target_u_id)
             
             user_msg = (
-                f"👤 <b>USER DETAILS & HISTORY</b>\n\n"
+                f"👤 <b>USER DETAILS & HISTORY (LAST 24 HOURS)</b>\n\n"
                 f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
                 f"👤 <b>Username:</b> @{u_info[1]}\n"
                 f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
                 f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
-                f"🛒 <b>Total Purchased Numbers:</b> {len(orders)} টি (সর্বশেষ ২০টি নিচে দেখানো হলো)\n\n"
-                f"<b>📋 ক্রয়ের হিস্ট্রি, লিংক ও OTP স্ট্যাটাস:</b>\n"
+                f"🛒 <b>Purchased Numbers (Last 24h):</b> {len(orders)} টি\n\n"
+                f"<b>📋 গত ২৪ ঘণ্টার ক্রয়ের হিস্ট্রি, লিংক ও OTP স্ট্যাটাস:</b>\n"
             )
 
             if not orders:
-                user_msg += "<i>এই ইউজার এখনও কোনো নম্বর কেনেনি।</i>\n"
+                user_msg += "<i>এই ইউজার গত ২৪ ঘণ্টায় কোনো নম্বর কেনেনি।</i>\n"
             else:
                 for idx, ord_item in enumerate(orders, 1):
                     p_num = ord_item[0]
@@ -718,7 +718,7 @@ def handle_update(update):
             }
             send_message(chat_id, user_msg, reply_markup=markup)
 
-         # Admin Refund / Add Balance Trigger
+        # Admin Refund / Add Balance Trigger
         elif data.startswith("admin_ref_input_") and is_admin:
             target_u_id = int(data.replace("admin_ref_input_", ""))
             user_states[user_id] = f"ADMIN_REFUND_USER_{target_u_id}"

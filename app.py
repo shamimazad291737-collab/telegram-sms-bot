@@ -20,7 +20,6 @@ def run_flask():
     app.run(host='0.0.0.0', port=port)
 
 # Flask সার্ভার চালু করার জন্য থ্রেড কল
-threading.Thread(target=run_flask, daemon=True).start()
 
 # Environment Variables
 TOKEN = os.environ.get("BOT_TOKEN")
@@ -769,20 +768,19 @@ def run_flask():
 
 
 if __name__ == "__main__":
-  # ১. Webhook ক্লিয়ার করা
+  # ১. ব্যাকগ্রাউন্ডে ওয়েবাসাইটের জন্য Flask চালানো
+  threading.Thread(target=run_flask, daemon=True).start()
+
+  # ২. পুরনো পেন্ডিং মেসেজ ও Webhook ক্লিয়ার করা
   try:
     requests.get(BASE_URL + "deleteWebhook?drop_pending_updates=True")
     print("Cleaned existing webhooks.")
   except Exception as e:
     print(f"Error clearing webhook: {e}")
 
-  # ২. Flask ওয়েব সার্ভার ব্যাকগ্রাউন্ড থ্রেডে চালু করা
-  flask_thread = threading.Thread(target=run_flask, daemon=True)
-  flask_thread.start()
-
   print("🚀 Bot Engine Online with MongoDB Cloud Storage...")
 
-  # ৩. মূল থ্রেডে ম্যানুয়াল পোলিং লুপ চালানো
+  # ৩. টেলিগ্রাম থেকে মেসেজ রিসিভ করার লুপ
   offset = 0
   while True:
     try:

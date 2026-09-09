@@ -1,3 +1,5 @@
 flask
 requests
 playwright
+pymongo
+dnspython

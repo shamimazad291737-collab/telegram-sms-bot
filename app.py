@@ -235,20 +235,20 @@ def verify_force_join(user_id):
 def get_main_keyboard(is_admin=False):
     kb = [
         [
-            {"text": "🛒 BUY NUMBER"},
-            {"text": "💳 DEPOSIT"}
+            {"text": "🛒 BUY NUMBER", "style": "success"},
+            {"text": "💳 DEPOSIT", "style": "primary"}
         ],
         [
-            {"text": "👤 PROFILE"},
-            {"text": "🎧 SUPPORT"}
+            {"text": "👤 PROFILE", "style": "primary"},
+            {"text": "🎧 SUPPORT", "style": "primary"}
         ]
     ]
     if is_admin:
-        kb.append([{"text": "⚙️ ADMIN PANEL"}])
+        kb.append([{"text": "⚙️ ADMIN PANEL", "style": "danger"}])
     return {"keyboard": kb, "resize_keyboard": True}
 
 def get_back_keyboard():
-    kb = [[{"text": "⬅️ Back"}]]
+    kb = [[{"text": "⬅️ Back", "style": "danger"}]]
     return {"keyboard": kb, "resize_keyboard": True}
 
 # Core Update Handler
@@ -291,17 +291,14 @@ def handle_update(update):
             is_joined, missing = verify_force_join(user_id)
             if not is_joined:
                 buttons = []
-                colors = ["🔴", "🔵", "🟢", "🟡"]
-                for idx, ch in enumerate(missing):
+                for ch in missing:
                     link = f"https://t.me/{ch.replace('@', '')}"
-                    c_emoji = colors[idx % len(colors)]
-                    buttons.append([{"text": f"{c_emoji} Channel {idx+1} [Join]", "url": link}])
-                
-                buttons.append([{"text": "✅ Verify Join / যাচাই করুন", "callback_data": "verify_join"}])
+                    buttons.append([{"text": f"📢 Join {ch}", "url": link}])
+                buttons.append([{"text": "🔄 Verify Join", "callback_data": "verify_join"}])
                 
                 send_message(
                     chat_id, 
-                    "⚠️ <b>বটটি ব্যবহার করতে নিচের চ্যানেলগুলোতে জয়েন করুন:</b>\n\nসবগুলো চ্যানেলে জয়েন করার পর <b>Verify Join</b> বোতামে চাপ দিন।", 
+                    "⚠️ <b>বটটি ব্যবহার করতে নিচের চ্যানেলগুলোতে জয়েন করুন:</b>\nসবগুলো চ্যানেলে জয়েন করার পর Verify Join বোতামে চাপ দিন।", 
                     reply_markup={"inline_keyboard": buttons}
                 )
                 return
@@ -335,8 +332,8 @@ def handle_update(update):
             # Dynamic Force Join Set
             if is_admin and state_data == "ADMIN_SET_CHANNELS":
                 ch_list = [c.strip() for c in text.split(",") if c.strip()]
-                if len(ch_list) > 4:
-                    send_message(chat_id, "❌ <b>সর্বোচ্চ ৪টি চ্যানেল লিংক দিতে পারবেন!</b> কমা দিয়ে ইউজারনেম দিন।")
+                if len(ch_list) > 3:
+                    send_message(chat_id, "❌ <b>সর্বোচ্চ ৩টি চ্যানেল লিংক দিতে পারবেন!</b> কমা দিয়ে ৩টি ইউজারনেম দিন।")
                     return
                 set_force_channels(ch_list)
                 send_message(chat_id, f"✅ <b>ফোর্স জয়েন চ্যানেল আপডেট করা হয়েছে!</b>\nচ্যানেলসমূহ: {', '.join(ch_list)}", reply_markup=get_main_keyboard(is_admin))
@@ -412,10 +409,10 @@ def handle_update(update):
                     admin_markup = {
                         "inline_keyboard": [
                             [
-                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}"},
-                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}"}
+                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}", "style": "success"},
+                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}", "style": "primary"}
                             ],
-                            [{"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}"}]
+                            [{"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}", "style": "danger"}]
                         ]
                     }
                     admin_caption = (
@@ -466,7 +463,7 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি সঠিক টেক্সট (.txt / .csv) ফাইল আপলোড করুন।</b>", reply_markup=get_back_keyboard())
                     return
 
-             # Admin Custom Deposit Input
+            # Admin Custom Deposit Input
             elif isinstance(state_data, str) and state_data.startswith("ADMIN_APPROVE_AMOUNT_"):
                 target_user = int(state_data.replace("ADMIN_APPROVE_AMOUNT_", ""))
                 try:
@@ -518,7 +515,7 @@ def handle_update(update):
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa"}]
+                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa", "style": "success"}]
                 ]
             }
             send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
@@ -528,9 +525,9 @@ def handle_update(update):
             dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(bdt_rate)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
             markup = {
                 "inline_keyboard": [
-                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash"}],
-                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad"}],
-                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance"}]
+                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash", "style": "primary"}],
+                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad", "style": "primary"}],
+                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance", "style": "success"}]
                 ]
             }
             send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
@@ -563,19 +560,19 @@ def handle_update(update):
                 f"📢 <b>Force Channels:</b> {chan_str}"
             )
             
-            toggle_btn = {"text": "🔴 Turn OFF Bot", "callback_data": "admin_toggle_bot_off"} if bot_active else {"text": "🟢 Turn ON Bot", "callback_data": "admin_toggle_bot_on"}
+            toggle_btn = {"text": "🔴 Turn OFF Bot", "callback_data": "admin_toggle_bot_off", "style": "danger"} if bot_active else {"text": "🟢 Turn ON Bot", "callback_data": "admin_toggle_bot_on", "style": "success"}
 
             markup = {
                 "inline_keyboard": [
                     [toggle_btn],
-                    [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_view_users"}],
-                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate"}],
-                    [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange"}],
-                    [{"text": "📢 Dynamic Force Join", "callback_data": "admin_set_channels"}],
-                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast"}],
-                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file"}],
-                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock"}],
-                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm"}]
+                    [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_view_users", "style": "success"}],
+                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
+                    [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange", "style": "primary"}],
+                    [{"text": "📢 Dynamic Force Join", "callback_data": "admin_set_channels", "style": "success"}],
+                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "primary"}],
+                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "success"}],
+                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
+                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm", "style": "danger"}]
                 ]
             }
             send_message(chat_id, msg, reply_markup=get_back_keyboard())
@@ -638,8 +635,8 @@ def handle_update(update):
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}"}],
-                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "primary"}],
+                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
                 ]
             }
             res_text = (
@@ -692,7 +689,7 @@ def handle_update(update):
                     update_order_otp(phone, otp_code)
                     markup = {
                         "inline_keyboard": [
-                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
+                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
                         ]
                     }
                     send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
@@ -708,60 +705,29 @@ def handle_update(update):
                 else:
                     send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
 
-        # Admin View All Users (In-place edit message)
+        # Admin View All Users
         elif data == "admin_view_users" and is_admin:
             users_list = get_all_users_info()
             if not users_list:
-                edit_message(chat_id, message_id, "❌ <b>বটে এখনও কোনো ইউজার রেজিস্টার করেনি।</b>")
+                send_message(chat_id, "❌ <b>বটে এখনও কোনো ইউজার রেজিস্টার করেনি।</b>")
                 return
 
             buttons = []
             for u in users_list:
                 u_id, u_name, u_bal = u[0], u[1], u[2]
                 display_title = f"👤 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"👤 ID: {u_id} (${u_bal:.2f})"
-                buttons.append([{"text": display_title, "callback_data": f"inspect_u_{u_id}"}])
+                buttons.append([{"text": display_title, "callback_data": f"inspect_u_{u_id}", "style": "primary"}])
 
-            buttons.append([{"text": "🔙 Back to Admin Panel", "callback_data": "back_to_admin"}])
             markup = {"inline_keyboard": buttons}
-            edit_message(chat_id, message_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস ও নম্বর হিস্ট্রি দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
+            send_message(chat_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস ও নম্বর হিস্ট্রি দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
 
-        # Back to Admin Panel Callback
-        elif data == "back_to_admin" and is_admin:
-            chans = get_force_channels()
-            chan_str = ", ".join(chans) if chans else "None"
-            status_str = "🟢 ONLINE" if bot_active else "🔴 OFF / MAINTENANCE"
-            msg = (
-                "<b>⚙️ ADMIN PANEL</b>\n\n"
-                f"🤖 <b>Bot Status:</b> {status_str}\n"
-                f"💰 <b>WhatsApp Price:</b> ${current_price:.2f} USD\n"
-                f"💱 <b>Exchange Rate:</b> 1 USD = ৳{int(bdt_rate)} BDT\n"
-                f"📢 <b>Force Channels:</b> {chan_str}"
-            )
-            
-            toggle_btn = {"text": "🔴 Turn OFF Bot", "callback_data": "admin_toggle_bot_off"} if bot_active else {"text": "🟢 Turn ON Bot", "callback_data": "admin_toggle_bot_on"}
-
-            markup = {
-                "inline_keyboard": [
-                    [toggle_btn],
-                    [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_view_users"}],
-                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate"}],
-                    [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange"}],
-                    [{"text": "📢 Dynamic Force Join", "callback_data": "admin_set_channels"}],
-                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast"}],
-                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file"}],
-                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock"}],
-                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm"}]
-                ]
-            }
-            edit_message(chat_id, message_id, msg, reply_markup=markup)
-
-        # Admin Inspect Specific User History (In-place edit message)
+        # Admin Inspect Specific User History
         elif data.startswith("inspect_u_") and is_admin:
             target_u_id = int(data.replace("inspect_u_", ""))
             u_info = get_user(target_u_id)
             
             if not u_info:
-                edit_message(chat_id, message_id, "❌ <b>ইউজার পাওয়া যায়নি!</b>")
+                send_message(chat_id, "❌ <b>ইউজার পাওয়া যায়নি!</b>")
                 return
 
             orders = get_user_orders_24h(target_u_id)
@@ -785,11 +751,11 @@ def handle_update(update):
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}"}],
-                    [{"text": "⬅️ Back to User List", "callback_data": "admin_view_users"}]
+                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}],
+                    [{"text": "⬅️ Back to User List", "callback_data": "admin_view_users", "style": "primary"}]
                 ]
             }
-            edit_message(chat_id, message_id, user_msg, reply_markup=markup)
+            send_message(chat_id, user_msg, reply_markup=markup)
 
         # Admin Controls Callback Setup
         elif data == "admin_set_exchange" and is_admin:
@@ -798,7 +764,7 @@ def handle_update(update):
 
         elif data == "admin_set_channels" and is_admin:
             user_states[user_id] = "ADMIN_SET_CHANNELS"
-            send_message(chat_id, "📢 <b>ফোর্স জয়েন চ্যানেল লিংক বা ইউজারনেম দিন:</b>\n(সর্বোচ্চ ৪টি, কমা দিয়ে দিয়ে লিখুন। যেমন: `@channel1, @channel2, @channel3, @channel4`)", reply_markup=get_back_keyboard())
+            send_message(chat_id, "📢 <b>ফোর্স জয়েন চ্যানেল লিংক বা ইউজারনেম দিন:</b>\n(সর্বোচ্চ ৩টি, কমা দিয়ে দিয়ে লিখুন। যেমন: `@channel1, @channel2, @channel3`)", reply_markup=get_back_keyboard())
 
         elif data.startswith("admin_ref_input_") and is_admin:
             target_u_id = int(data.replace("admin_ref_input_", ""))
@@ -842,7 +808,7 @@ def handle_update(update):
                 send_message(chat_id, stock_text)
 
         elif data == "admin_delete_stock_confirm" and is_admin:
-            markup = {"inline_keyboard": [[{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute"}]]}
+            markup = {"inline_keyboard": [[{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]]}
             edit_message(chat_id, message_id, "⚠️ <b>আপনি কি নিশ্চিতভাবে সমস্ত স্টক ফাইল/নম্বর মুছে ফেলতে চান?</b>", reply_markup=markup)
 
         elif data == "admin_delete_stock_execute" and is_admin:

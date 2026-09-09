@@ -760,27 +760,26 @@ def handle_update(update):
             send_message(target_user, f"❌ <b>ডিপোজিট প্রুফটি সঠিক নয়!</b>")
             send_message(chat_id, f"❌ <b>User ID {target_user}-এর ডিপোজিট বাতিল করা হয়েছে।</b>")
 
-def safe_execution_wrapper(upd):
-  try:
-    handle_update(upd)
-  except Exception as e:
-    print(f"Exception Handled Safety: {e}")
+def run_flask():
+  port = int(os.environ.get("PORT", 10000))
+  app.run(host="0.0.0.0", port=port, use_reloader=False)
 
 
 if __name__ == "__main__":
-  # ১. Flask ওয়েব সার্ভার চালু করবে
-  threading.Thread(target=run_flask, daemon=True).start()
-
-  print("🚀 Bot Engine Online with MongoDB Cloud Storage...")
-
-  # ২. আগের আটকে থাকা Webhook বা পেন্ডিং ফাইল ক্লিয়ার করবে
+  # ১. Webhook ক্লিয়ার করা
   try:
     requests.get(BASE_URL + "deleteWebhook?drop_pending_updates=True")
     print("Cleaned existing webhooks.")
   except Exception as e:
     print(f"Error clearing webhook: {e}")
 
-  # ৩. মেসেজ রিসিভ করার লুপ
+  # ২. Flask ওয়েব সার্ভার ব্যাকগ্রাউন্ড থ্রেডে চালু করা
+  flask_thread = threading.Thread(target=run_flask, daemon=True)
+  flask_thread.start()
+
+  print("🚀 Bot Engine Online with MongoDB Cloud Storage...")
+
+  # ৩. মূল থ্রেডে ম্যানুয়াল পোলিং লুপ চালানো
   offset = 0
   while True:
     try:

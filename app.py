@@ -763,36 +763,35 @@ def handle_update(update):
             send_message(chat_id, f"❌ <b>User ID {target_user}-এর ডিপোজিট বাতিল করা হয়েছে।</b>")
 
 def run_flask():
-  port = int(os.environ.get("PORT", 10000))
-  app.run(host="0.0.0.0", port=port, use_reloader=False)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, use_reloader=False)
 
+# ব্যাকগ্রাউন্ড থ্রেডে Flask সার্ভার চালু করা
+threading.Thread(target=run_flask, daemon=True).start()
 
-if __name__ == "__main__":
-  # ১. ব্যাকগ্রাউন্ডে ওয়েবাসাইটের জন্য Flask চালানো
-  threading.Thread(target=run_flask, daemon=True).start()
-
-  # ২. পুরনো পেন্ডিং মেসেজ ও Webhook ক্লিয়ার করা
-  try:
+# টেলিগ্রাম Webhook ক্লিয়ার করা (W বড় হাতের হতে হবে)
+try:
     requests.get(BASE_URL + "deleteWebhook?drop_pending_updates=True")
     print("Cleaned existing webhooks.")
-  except Exception as e:
+except Exception as e:
     print(f"Error clearing webhook: {e}")
 
-  print("🚀 Bot Engine Online with MongoDB Cloud Storage...")
+print("🚀 Bot Engine Online with MongoDB Cloud Storage...")
 
-  # ৩. টেলিগ্রাম থেকে মেসেজ রিসিভ করার লুপ
-  offset = 0
-  while True:
+# টেলিগ্রাম থেকে মেসেজ রিসিভ করার লুপ
+offset = 0
+while True:
     try:
-      res = requests.get(
-          BASE_URL + "getUpdates", params={"offset": offset, "timeout": 20}
-      ).json()
-      if res.get("ok"):
-        for update in res.get("result", []):
-          offset = update["update_id"] + 1
-          threading.Thread(
-              target=safe_execution_wrapper, args=(update,)
-          ).start()
+        res = requests.get(
+            BASE_URL + "getUpdates", params={"offset": offset, "timeout": 20}
+        ).json()
+        if res.get("ok"):
+            for update in res.get("result", []):
+                offset = update["update_id"] + 1
+                threading.Thread(
+                    target=safe_execution_wrapper, args=(update,)
+                ).start()
     except Exception as e:
-      print(f"Polling Network Recovering... {e}")
-      time.sleep(3)
+        print(f"Polling Network Recovering... {e}")
+        time.sleep(3)
+        

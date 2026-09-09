@@ -26,7 +26,7 @@ SUPPORT_USERNAME = os.environ.get("SUPPORT_USERNAME", "telegram")
 OTP_GROUP_ID = os.environ.get("OTP_GROUP_ID", "")
 MONGO_URI = os.environ.get(
     "MONGO_URI", "mongodb://localhost:27017/my_telegram_bot"
-)  # Replace or set via Environment
+)
 
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}/"
 
@@ -39,20 +39,11 @@ stock_col = db["stock"]
 orders_col = db["active_orders"]
 settings_col = db["settings"]
 
-# Required Join Channels Config (Must be set by Admin or manually in DB)
+# Required Join Channels Config
 REQUIRED_CHANNELS = [
-    {
-        "title": "Channel 1",
-        "username": "@channel1_username",
-    },  # আপনার প্রথম চ্যানেল ইউজারনেম দিন
-    {
-        "title": "Channel 2",
-        "username": "@channel2_username",
-    },  # আপনার দ্বিতীয় চ্যানেল ইউজারনেম দিন
-    {
-        "title": "Channel 3",
-        "username": "@channel3_username",
-    },  # আপনার তৃতীয় চ্যানেল ইউজারনেম দিন
+    {"title": "Channel 1", "username": "@channel1_username"},
+    {"title": "Channel 2", "username": "@channel2_username"},
+    {"title": "Channel 3", "username": "@channel3_username"},
 ]
 
 user_states = {}
@@ -69,8 +60,9 @@ def get_setting(key, default_value):
 
 
 def set_setting(key, value):
-  settings_col.update_one
-  ({"key": key}, {"$set": {"value": str(value)}}, upsert=True)
+  settings_col.update_one(
+      {"key": key}, {"$set": {"value": str(value)}}, upsert=True
+  )
 
 
 def get_number_price():
@@ -112,7 +104,7 @@ def mask_phone_number(phone):
   return clean_phone
 
 
-# Database Helpers (MongoDB Migration)
+# Database Helpers (MongoDB)
 def get_user(user_id):
   return users_col.find_one({"user_id": user_id})
 
@@ -543,7 +535,7 @@ def handle_update(update):
         except ValueError:
           send_message(
               chat_id,
-              "❌ <b>সঠিক ডলার অ্যামাউন্ট লিখুন (যেমন: 0.10 или 0.15)।</b>",
+              "❌ <b>সঠিক ডলার অ্যামাউন্ট লিখুন (যেমন: 0.10 বা 0.15)।</b>",
           )
         del user_states[user_id]
         return
@@ -830,9 +822,7 @@ def handle_update(update):
     if data == "confirm_buy_usa":
       if not is_bot_active() and not is_admin:
         edit_message(
-            chat_id,
-            message_id,
-            "⚠️ <b>এডমিন বর্তমানে বট বন্ধ রেখেছেন।</b>",
+            chat_id, message_id, "⚠️ <b>এডমিন বর্তমানে বট বন্ধ রেখেছেন।</b>"
         )
         return
 
@@ -851,9 +841,7 @@ def handle_update(update):
       phone, link = pop_stock_item()
       if not phone:
         edit_message(
-            chat_id,
-            message_id,
-            "⚠️ <b>দুঃখিত! বর্তমানে স্টক ফাঁকা রয়েছে।</b>",
+            chat_id, message_id, "⚠️ <b>দুঃখিত! বর্তমানে স্টক ফাঁকা রয়েছে।</b>"
         )
         return
 
@@ -950,8 +938,7 @@ def handle_update(update):
             send_message(OTP_GROUP_ID, group_msg)
         else:
           send_message(
-              chat_id,
-              "⌛ <b>OTP এখনও আসেনি!</b> কিছুক্ষণ পর আবার চেক করুন।",
+              chat_id, "⌛ <b>OTP এখনও আসেনি!</b> কিছুক্ষণ পর আবার চেক করুন।"
           )
 
     elif data == "admin_toggle_bot" and is_admin:
@@ -1100,9 +1087,7 @@ def handle_update(update):
     elif data == "admin_broadcast" and is_admin:
       user_states[user_id] = "ADMIN_BROADCAST"
       send_message(
-          chat_id,
-          "📢 <b>বার্তাটি লিখে পাঠান:</b>",
-          reply_markup=get_back_keyboard(),
+          chat_id, "📢 <b>বার্তাটি লিখে পাঠান:</b>", reply_markup=get_back_keyboard()
       )
 
     elif data == "admin_upload_file" and is_admin:
@@ -1118,9 +1103,7 @@ def handle_update(update):
       if not stock_items:
         send_message(chat_id, "📊 <b>বর্তমানে স্টক ফাঁকা!</b>")
       else:
-        stock_text = (
-            f"📊 <b>বর্তমান স্টক (মোট: {len(stock_items)} টি):</b>\n\n"
-        )
+        stock_text = f"📊 <b>বর্তমান স্টক (মোট: {len(stock_items)} টি):</b>\n\n"
         for item in stock_items[:30]:
           stock_text += (
               f"📱 <code>{item['phone_number']}</code>\n🔗"
@@ -1145,9 +1128,7 @@ def handle_update(update):
 
     elif data == "admin_delete_stock_execute" and is_admin:
       clear_all_stock()
-      edit_message(
-          chat_id, message_id, "🗑️ <b>সমস্ত স্টক ডিলিট করা হয়েছে!</b>"
-      )
+      edit_message(chat_id, message_id, "🗑️ <b>সমস্ত স্টক ডিলিট করা হয়েছে!</b>")
 
     elif data.startswith("appusd_") and is_admin:
       parts = data.split("_")

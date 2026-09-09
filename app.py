@@ -761,22 +761,38 @@ def handle_update(update):
             send_message(chat_id, f"❌ <b>User ID {target_user}-এর ডিপোজিট বাতিল করা হয়েছে।</b>")
 
 def safe_execution_wrapper(upd):
-    try:
-        handle_update(upd)
-    except Exception as e:
-        print(f"Exception Handled Safety: {e}")
+  try:
+    handle_update(upd)
+  except Exception as e:
+    print(f"Exception Handled Safety: {e}")
+
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    print("🚀 Bot Engine Online with MongoDB Cloud Storage...")
-    offset = 0
-    while True:
-        try:
-            res = requests.get(BASE_URL + "getUpdates", params={"offset": offset, "timeout": 20}, timeout=25).json()
-            if res.get("ok"):
-                for update in res.get("result", []):
-                    offset = update["update_id"] + 1
-                    threading.Thread(target=safe_execution_wrapper, args=(update,), daemon=True).start()
-        except Exception as e:
-            print(f"Polling Network Recovering... {e}")
-            time.sleep(3)
+  # ১. Flask ওয়েব সার্ভার চালু করবে
+  threading.Thread(target=run_flask, daemon=True).start()
+
+  print("🚀 Bot Engine Online with MongoDB Cloud Storage...")
+
+  # ২. আগের আটকে থাকা Webhook বা পেন্ডিং ফাইল ক্লিয়ার করবে
+  try:
+    requests.get(BASE_URL + "deleteWebhook?drop_pending_updates=True")
+    print("Cleaned existing webhooks.")
+  except Exception as e:
+    print(f"Error clearing webhook: {e}")
+
+  # ৩. মেসেজ রিসিভ করার লুপ
+  offset = 0
+  while True:
+    try:
+      res = requests.get(
+          BASE_URL + "getUpdates", params={"offset": offset, "timeout": 20}
+      ).json()
+      if res.get("ok"):
+        for update in res.get("result", []):
+          offset = update["update_id"] + 1
+          threading.Thread(
+              target=safe_execution_wrapper, args=(update,)
+          ).start()
+    except Exception as e:
+      print(f"Polling Network Recovering... {e}")
+      time.sleep(3)

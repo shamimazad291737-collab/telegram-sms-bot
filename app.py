@@ -19,6 +19,9 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
+# Flask সার্ভার চালু করার জন্য থ্রেড কল
+threading.Thread(target=run_flask, daemon=True).start()
+
 # Environment Variables
 TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0")) if os.environ.get("ADMIN_ID") else 0

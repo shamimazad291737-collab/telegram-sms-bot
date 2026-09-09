@@ -212,9 +212,14 @@ def check_channel_member(user_id, channel_input):
     try:
         ch = channel_input.strip()
         if "t.me/" in ch:
-            ch = "@" + ch.split("t.me/")[-1].replace("/", "")
+            path = ch.split("t.me/")[-1].replace("/", "")
+            if path.startswith("+") or path.startswith("joinchat"):
+                ch = path 
+            else:
+                ch = "@" + path
         elif not ch.startswith("@") and not ch.startswith("-100"):
             ch = "@" + ch
+
         res = requests.post(BASE_URL + "getChatMember", json={"chat_id": ch, "user_id": user_id}, timeout=5).json()
         if res.get("ok"):
             status = res["result"]["status"]

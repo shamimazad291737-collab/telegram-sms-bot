@@ -208,10 +208,12 @@ def send_photo_to_admin(chat_id, photo_file_id, caption, reply_markup=None):
     except Exception as e:
         print(f"Error sending photo: {e}")
 
-def check_channel_member(user_id, channel_username):
+def check_channel_member(user_id, channel_input):
     try:
-        ch = channel_username.strip()
-        if not ch.startswith("@") and not ch.startswith("-100"):
+        ch = channel_input.strip()
+        if "t.me/" in ch:
+            ch = "@" + ch.split("t.me/")[-1].replace("/", "")
+        elif not ch.startswith("@") and not ch.startswith("-100"):
             ch = "@" + ch
         res = requests.post(BASE_URL + "getChatMember", json={"chat_id": ch, "user_id": user_id}, timeout=5).json()
         if res.get("ok"):
@@ -291,14 +293,22 @@ def handle_update(update):
             is_joined, missing = verify_force_join(user_id)
             if not is_joined:
                 buttons = []
-                for ch in missing:
-                    link = f"https://t.me/{ch.replace('@', '')}"
-                    buttons.append([{"text": f"📢 Join {ch}", "url": link}])
+                for idx, ch in enumerate(missing, 1):
+                    clean_ch = ch.strip()
+                    if clean_ch.startswith("http://") or clean_ch.startswith("https://"):
+                        link = clean_ch
+                    elif "t.me/" in clean_ch:
+                        link = clean_ch if clean_ch.startswith("http") else f"https://{clean_ch}"
+                    else:
+                        link = f"https://t.me/{clean_ch.replace('@', '')}"
+                    
+                    buttons.append([{"text": f"📢 Join Channel {idx}", "url": link}])
+                
                 buttons.append([{"text": "🔄 Verify Join", "callback_data": "verify_join"}])
                 
                 send_message(
                     chat_id, 
-                    "⚠️ <b>বটটি ব্যবহার করতে নিচের চ্যানেলগুলোতে জয়েন করুন:</b>\nসবগুলো চ্যানেলে জয়েন করার পর Verify Join বোতামে চাপ দিন।", 
+                    "⚠️ <b>বটটি ব্যবহার করতে নিচের ২টি চ্যানেলে জয়েন করুন:</b>\nসবগুলো চ্যানেলে জয়েন করার পর Verify Join বোতামে চাপ দিন।", 
                     reply_markup={"inline_keyboard": buttons}
                 )
                 return
@@ -329,14 +339,14 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            # Dynamic Force Join Set
+            # Dynamic Force Join Set (Strict 2 Channels Option)
             if is_admin and state_data == "ADMIN_SET_CHANNELS":
                 ch_list = [c.strip() for c in text.split(",") if c.strip()]
-                if len(ch_list) > 3:
-                    send_message(chat_id, "❌ <b>সর্বোচ্চ ৩টি চ্যানেল লিংক দিতে পারবেন!</b> কমা দিয়ে ৩টি ইউজারনেম দিন।")
+                if len(ch_list) > 2:
+                    send_message(chat_id, "❌ <b>সর্বোচ্চ ২টি চ্যানেল লিঙ্ক বা ইউজারনেম দিতে পারবেন!</b>\nকমা (,) দিয়ে ২টি লিঙ্ক বা ইউজারনেম দিন।")
                     return
                 set_force_channels(ch_list)
-                send_message(chat_id, f"✅ <b>ফোর্স জয়েন চ্যানেল আপডেট করা হয়েছে!</b>\nচ্যানেলসমূহ: {', '.join(ch_list)}", reply_markup=get_main_keyboard(is_admin))
+                send_message(chat_id, f"✅ <b>ফোর্স জয়েন চ্যানেল ২ টি সেট করা হয়েছে!</b>\nচ্যানেলসমূহ: {', '.join(ch_list)}", reply_markup=get_main_keyboard(is_admin))
                 del user_states[user_id]
                 return
 
@@ -557,7 +567,7 @@ def handle_update(update):
                 f"🤖 <b>Bot Status:</b> {status_str}\n"
                 f"💰 <b>WhatsApp Price:</b> ${current_price:.2f} USD\n"
                 f"💱 <b>Exchange Rate:</b> 1 USD = ৳{int(bdt_rate)} BDT\n"
-                f"📢 <b>Force Channels:</b> {chan_str}"
+                f"📢 <b>Force Channels (Max 2):</b> {chan_str}"
             )
             
             toggle_btn = {"text": "🔴 Turn OFF Bot", "callback_data": "admin_toggle_bot_off", "style": "danger"} if bot_active else {"text": "🟢 Turn ON Bot", "callback_data": "admin_toggle_bot_on", "style": "success"}
@@ -568,7 +578,7 @@ def handle_update(update):
                     [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_view_users", "style": "success"}],
                     [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
                     [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange", "style": "primary"}],
-                    [{"text": "📢 Dynamic Force Join", "callback_data": "admin_set_channels", "style": "success"}],
+                    [{"text": "📢 Dynamic Force Join (2 Channels)", "callback_data": "admin_set_channels", "style": "success"}],
                     [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "primary"}],
                     [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "success"}],
                     [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
@@ -615,7 +625,7 @@ def handle_update(update):
             if is_joined:
                 send_message(chat_id, "✅ <b>ধন্যবাদ! ভেরিফিকেশন সফল হয়েছে।</b>\nএখন বট ব্যবহার করতে পারবেন।", reply_markup=get_main_keyboard(is_admin))
             else:
-                send_message(chat_id, "❌ <b>আপনি এখনও সবগুলো চ্যানেলে জয়েন করেননি!</b> দয়া করে সবগুলোতে জয়েন করে আবার ট্রাই করুন।")
+                send_message(chat_id, "❌ <b>আপনি এখনও সবগুলো চ্যানেলে জয়েন করেননি!</b>\nদয়া করে ২টি চ্যানেলেই জয়েন করে আবার ট্রাই করুন।")
 
         elif data == "confirm_buy_usa":
             u_info = get_user(user_id)
@@ -650,7 +660,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # OTP Dynamic Scraping
+         # OTP Dynamic Scraping
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -764,7 +774,7 @@ def handle_update(update):
 
         elif data == "admin_set_channels" and is_admin:
             user_states[user_id] = "ADMIN_SET_CHANNELS"
-            send_message(chat_id, "📢 <b>ফোর্স জয়েন চ্যানেল লিংক বা ইউজারনেম দিন:</b>\n(সর্বোচ্চ ৩টি, কমা দিয়ে দিয়ে লিখুন। যেমন: `@channel1, @channel2, @channel3`)", reply_markup=get_back_keyboard())
+            send_message(chat_id, "📢 <b>ফোর্স জয়েন চ্যানেল ২ টি লিঙ্ক বা ইউজারনেম দিন:</b>\n(সর্বোচ্চ ২টি, কমা দিয়ে দিন। যেমন: `@channel1, @channel2` অথবা `https://t.me/link1, https://t.me/link2`)", reply_markup=get_back_keyboard())
 
         elif data.startswith("admin_ref_input_") and is_admin:
             target_u_id = int(data.replace("admin_ref_input_", ""))

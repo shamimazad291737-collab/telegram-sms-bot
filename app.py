@@ -8,26 +8,26 @@ from datetime import datetime, timedelta
 from flask import Flask
 from pymongo import MongoClient
 
-# Language Detector Function for Requirement #2
+# Language Detector Function with custom shortcodes
 def detect_language(text):
     if not text:
         return "Unknown"
     # Chinese Character Range
     if re.search(r'[\u4e00-\u9fff]', text):
-        return "Chinese (zh)"
+        return "CH"
     # Arabic Character Range
     elif re.search(r'[\u0600-\u06FF]', text):
-        return "Arabic (ar)"
+        return "AR"
     # Cyrillic / Russian Range
     elif re.search(r'[\u0400-\u04FF]', text):
-        return "Russian (ru)"
+        return "RU"
     # Hindi Range
     elif re.search(r'[\u0900-\u097F]', text):
-        return "Hindi (hi)"
+        return "HI"
     # Latin / English Range
     elif re.search(r'[a-zA-Z]', text):
-        return "English (en)"
-    return "Other Language"
+        return "EN"
+    return "OTHERS"
 
 # Flask app initialization for Render Port Binding
 app = Flask(__name__)
@@ -192,7 +192,7 @@ def save_active_order(user_id, phone, link):
         "created_at": datetime.now()
     })
 
-def update_order_otp(phone, otp_code, app_type="WhatsApp", lang="English (en)"):
+def update_order_otp(phone, otp_code, app_type="WA", lang="EN"):
     orders_col.update_one(
         {"phone_number": phone}, 
         {"$set": {"otp_code": otp_code, "app_type": app_type, "lang": lang}}
@@ -207,8 +207,8 @@ def get_user_orders_all(user_id):
             row.get("otp_code"), 
             row["purchase_date"], 
             row["otp_link"], 
-            row.get("app_type", "WhatsApp"), 
-            row.get("lang", "English (en)")
+            row.get("app_type", "WA"), 
+            row.get("lang", "EN")
         ))
     return all_orders
 
@@ -488,6 +488,7 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
+            
             # Deposit Step 1: Amount
             if isinstance(state_data, dict) and state_data.get("step") == "WAITING_AMOUNT":
                 method = state_data["method"]
@@ -846,7 +847,7 @@ def handle_update(update):
 
                 if otp_code:
                     # App Detection Logic
-                    app_type = "WhatsApp Business" if ("business" in raw_response_text.lower() or "smb" in raw_response_text.lower()) else "WhatsApp"
+                    app_type = "WB" if ("business" in raw_response_text.lower() or "smb" in raw_response_text.lower()) else "WA"
                     # Language Detection Logic
                     detected_lang = detect_language(raw_response_text)
 
@@ -859,7 +860,7 @@ def handle_update(update):
                     }
                     
                     otp_msg = (
-                        f"<b>Your WhatsApp Code</b> ({app_type})\n\n"
+                        f"<b>Your WhatsApp Code ({app_type})</b>\n\n"
                         f"🔑 <b>OTP:</b> <code>{otp_code}</code>\n"
                         f"🌐 <b>Language:</b> <code>{detected_lang}</code>"
                     )
@@ -868,7 +869,7 @@ def handle_update(update):
                     if OTP_GROUP_ID:
                         masked_num = mask_phone_number(phone)
                         group_msg = (
-                            f"🎉 <b>New OTP Received!</b> ({app_type})\n\n"
+                            f"🎉 <b>New OTP Received! ({app_type})</b>\n\n"
                             f"📱 <b>Number:</b> <code>{masked_num}</code>\n"
                             f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>\n"
                             f"🌐 <b>Language:</b> <code>{detected_lang}</code>"
@@ -925,7 +926,7 @@ def handle_update(update):
             user_states[user_id] = "ADMIN_SEARCH_USER"
             send_message(chat_id, "🔎 <b>ইউজারের Username টি লিখে পাঠান:</b>\n(যেমন: `@username` বা `username`)", reply_markup=get_back_keyboard())
 
-        # Inspect Active Buyer Details
+       # Inspect Active Buyer Details
         elif data.startswith("inspect_buyer_") and is_admin:
             target_u_id = int(data.replace("inspect_buyer_", ""))
             u_info = get_user(target_u_id)

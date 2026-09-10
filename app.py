@@ -8,6 +8,27 @@ from datetime import datetime, timedelta
 from flask import Flask
 from pymongo import MongoClient
 
+# Language Detector Function for Requirement #2
+def detect_language(text):
+    if not text:
+        return "Unknown"
+    # Chinese Character Range
+    if re.search(r'[\u4e00-\u9fff]', text):
+        return "Chinese (zh)"
+    # Arabic Character Range
+    elif re.search(r'[\u0600-\u06FF]', text):
+        return "Arabic (ar)"
+    # Cyrillic / Russian Range
+    elif re.search(r'[\u0400-\u04FF]', text):
+        return "Russian (ru)"
+    # Hindi Range
+    elif re.search(r'[\u0900-\u097F]', text):
+        return "Hindi (hi)"
+    # Latin / English Range
+    elif re.search(r'[a-zA-Z]', text):
+        return "English (en)"
+    return "Other Language"
+
 # Flask app initialization for Render Port Binding
 app = Flask(__name__)
 
@@ -99,6 +120,18 @@ def get_all_users_info():
 def get_all_users():
     return [u["user_id"] for u in users_col.find({}, {"user_id": 1})]
 
+def get_buyers_list():
+    buyer_ids = orders_col.distinct("user_id")
+    buyers = list(users_col.find({"user_id": {"$in": buyer_ids}}))
+    return [(u["user_id"], u.get("username", "NoUsername"), u.get("balance", 0.0)) for u in buyers]
+
+def get_user_by_username(username):
+    clean_username = username.replace("@", "").strip()
+    u = users_col.find_one({"username": {"$regex": f"^{clean_username}$", "$options": "i"}})
+    if u:
+        return (u["user_id"], u.get("username", "NoUsername"), u.get("balance", 0.0), u.get("total_recharge", 0.0))
+    return None
+
 def get_all_stock():
     stocks = list(stock_col.find())
     return [(str(s["_id"]), s["phone_number"], s["otp_link"]) for s in stocks]
@@ -153,12 +186,31 @@ def save_active_order(user_id, phone, link):
         "phone_number": phone,
         "otp_link": link,
         "otp_code": None,
+        "app_type": None,
+        "lang": None,
         "purchase_date": now_str,
         "created_at": datetime.now()
     })
 
-def update_order_otp(phone, otp_code):
-    orders_col.update_one({"phone_number": phone}, {"$set": {"otp_code": otp_code}})
+def update_order_otp(phone, otp_code, app_type="WhatsApp", lang="English (en)"):
+    orders_col.update_one(
+        {"phone_number": phone}, 
+        {"$set": {"otp_code": otp_code, "app_type": app_type, "lang": lang}}
+    )
+
+def get_user_orders_all(user_id):
+    rows = list(orders_col.find({"user_id": user_id}).sort("_id", -1))
+    all_orders = []
+    for row in rows:
+        all_orders.append((
+            row["phone_number"], 
+            row.get("otp_code"), 
+            row["purchase_date"], 
+            row["otp_link"], 
+            row.get("app_type", "WhatsApp"), 
+            row.get("lang", "English (en)")
+        ))
+    return all_orders
 
 def get_user_orders_24h(user_id):
     rows = list(orders_col.find({"user_id": user_id}).sort("_id", -1))
@@ -322,6 +374,87 @@ def handle_update(update):
         if user_id in user_states:
             state_data = user_states[user_id]
             
+            # Requirement #4: Multiple Number Quantity Input
+            if isinstance(state_data, str) and state_data == "BUY_MULTI_QTY":
+                try:
+                    qty = int(text)
+                    if qty <= 0:
+                        send_message(chat_id, "❌ <b>সঠিক সংখ্যা লিখুন (কমপক্ষে ১ টি)।</b>")
+                        return
+                    
+                    u_info = get_user(user_id)
+                    bal = u_info[2] if u_info else 0.0
+                    total_cost = current_price * qty
+
+                    if bal < total_cost:
+                        send_message(chat_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\n{qty} টি নম্বর কিনতে ${total_cost:.2f} USD লাগবে। আপনার ব্যালেন্স: ${bal:.2f} USD।")
+                        del user_states[user_id]
+                        return
+
+                    stock_items = get_all_stock()
+                    if len(stock_items) < qty:
+                        send_message(chat_id, f"⚠️ <b>দুঃখিত! স্টকে পর্যাপ্ত নম্বর নেই।</b>\nবর্তমানে স্টকে {len(stock_items)} টি নম্বর খালি রয়েছে।")
+                        del user_states[user_id]
+                        return
+
+                    purchased_list = []
+                    for _ in range(qty):
+                        phone, link = pop_stock_item()
+                        if phone:
+                            deduct_balance(user_id, current_price)
+                            save_active_order(user_id, phone, link)
+                            purchased_list.append((phone, link))
+
+                    del user_states[user_id]
+                    
+                    res_msg = f"✅ <b>সফলভাবে {len(purchased_list)} টি নম্বর কেনা হয়েছে!</b>\n\n"
+                    for idx, (p, l) in enumerate(purchased_list, 1):
+                        res_msg += f"<b>{idx}.</b> 📱 <code>{p}</code> | 🔗 {l}\n"
+                    
+                    res_msg += f"\n💰 <b>মোট ফি কাটা হয়েছে:</b> ${current_price * len(purchased_list):.2f} USD\n👉 যেকোনো একটির ওটিপি পেতে <b>Check OTP</b> বাটনে চাপ দিন।"
+                    
+                    # Generates Inline Buttons for Multi-Check
+                    multi_btns = []
+                    for p, l in purchased_list[:10]: # Max 10 buttons per view to avoid TG clutter
+                        multi_btns.append([{"text": f"🔄 Check OTP ({p})", "callback_data": f"chk_otp_{p}", "style": "primary"}])
+                    
+                    send_message(chat_id, res_msg, reply_markup={"inline_keyboard": multi_btns})
+                    send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
+                    return
+
+                except ValueError:
+                    send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল পূর্ণসংখ্যা লিখুন (যেমন: 2, 5, 10)।")
+                    return
+
+            # Requirement #3: Search User by Username
+            if is_admin and isinstance(state_data, str) and state_data == "ADMIN_SEARCH_USER":
+                u_info = get_user_by_username(text)
+                if not u_info:
+                    send_message(chat_id, f"❌ <b>'{text}' ইউজারনেমে কোনো ইউজার খুঁজে পাওয়া যায়নি!</b>", reply_markup=get_main_keyboard(is_admin))
+                    del user_states[user_id]
+                    return
+
+                target_u_id = u_info[0]
+                orders = get_user_orders_all(target_u_id)
+                
+                search_res = (
+                    f"🔎 <b>USER SEARCH RESULT</b>\n\n"
+                    f"👤 <b>Username:</b> @{u_info[1]}\n"
+                    f"🆔 <b>User ID:</b> <code>{target_u_id}</code>\n"
+                    f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
+                    f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
+                    f"🛒 <b>Total Purchased Numbers:</b> {len(orders)} টি\n"
+                )
+
+                markup = {
+                    "inline_keyboard": [
+                        [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}]
+                    ]
+                }
+                send_message(chat_id, search_res, reply_markup=markup)
+                del user_states[user_id]
+                return
+
             # Change Exchange Rate
             if is_admin and state_data == "ADMIN_SET_EXCHANGE":
                 try:
@@ -527,14 +660,16 @@ def handle_update(update):
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
 
+        # Requirement #4: Single vs Multiple Number Purchase Buttons
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"🇺🇸 Buy USA WhatsApp Number (${current_price:.2f} USD)", "callback_data": "confirm_buy_usa", "style": "success"}]
+                    [{"text": f"👤 Buy Single Number (${current_price:.2f})", "callback_data": "confirm_buy_usa", "style": "success"}],
+                    [{"text": "🔢 Buy Multiple Numbers", "callback_data": "buy_multi_num", "style": "primary"}]
                 ]
             }
             send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
-            send_message(chat_id, "সার্ভিস অপশন:", reply_markup=markup)
+            send_message(chat_id, "সার্ভিস অপশন বেছে নিন:", reply_markup=markup)
 
         elif text == "💳 DEPOSIT":
             dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(bdt_rate)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
@@ -563,6 +698,7 @@ def handle_update(update):
         elif text == "🎧 SUPPORT":
             send_message(chat_id, f"<b>যেকোনো সাহায্যে যোগাযোগ করুন:</b>\n👉 @{SUPPORT_USERNAME}", reply_markup=get_back_keyboard())
 
+        # Requirement #3: Updated Admin Panel User Management Menu
         elif text == "⚙️ ADMIN PANEL" and is_admin:
             chans = get_force_channels()
             chan_str = ", ".join(chans) if chans else "None"
@@ -580,7 +716,7 @@ def handle_update(update):
             markup = {
                 "inline_keyboard": [
                     [toggle_btn],
-                    [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_view_users", "style": "success"}],
+                    [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_user_mgmt_menu", "style": "success"}],
                     [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
                     [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange", "style": "primary"}],
                     [{"text": "📢 Dynamic Force Join (2 Channels)", "callback_data": "admin_set_channels", "style": "success"}],
@@ -632,6 +768,11 @@ def handle_update(update):
             else:
                 send_message(chat_id, "❌ <b>আপনি এখনও সবগুলো চ্যানেলে জয়েন করেননি!</b>\nদয়া করে ২টি চ্যানেলেই জয়েন করে আবার ট্রাই করুন।")
 
+        # Requirement #4: Multiple Number Trigger Callback
+        elif data == "buy_multi_num":
+            user_states[user_id] = "BUY_MULTI_QTY"
+            send_message(chat_id, "🔢 <b>আপনি কতগুলো নম্বর কিনতে চান লিখে পাঠান:</b>\n(যেমন: 2, 5, 10 ইত্যাদি)", reply_markup=get_back_keyboard())
+
         elif data == "confirm_buy_usa":
             u_info = get_user(user_id)
             bal = u_info[2] if u_info else 0.0
@@ -665,7 +806,7 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-         # OTP Dynamic Scraping
+        # Requirements #1 & #2: Header, App Identification & Language Scraping
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -673,6 +814,7 @@ def handle_update(update):
             if order:
                 link = order[2]
                 otp_code = None
+                raw_response_text = ""
                 
                 try:
                     headers = {
@@ -684,11 +826,13 @@ def handle_update(update):
                     api_link = link.replace("/sms/", "/api/sms/") if "/sms/" in link else link
                     response = requests.get(api_link, headers=headers, timeout=8)
                     api_text = response.text.strip()
+                    raw_response_text = api_text
 
                     if re.match(r'^\d{3,10}$', api_text):
                         otp_code = api_text
                     else:
                         main_res = requests.get(link, headers=headers, timeout=8)
+                        raw_response_text = main_res.text
                         matches = re.findall(r'\b\d{6}\b', main_res.text)
                         clean_phone = re.sub(r'\D', '', phone)
                         
@@ -701,26 +845,50 @@ def handle_update(update):
                     print(f"OTP Scraping Error: {e}")
 
                 if otp_code:
-                    update_order_otp(phone, otp_code)
+                    # App Detection Logic
+                    app_type = "WhatsApp Business" if ("business" in raw_response_text.lower() or "smb" in raw_response_text.lower()) else "WhatsApp"
+                    # Language Detection Logic
+                    detected_lang = detect_language(raw_response_text)
+
+                    update_order_otp(phone, otp_code, app_type=app_type, lang=detected_lang)
+                    
                     markup = {
                         "inline_keyboard": [
                             [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
                         ]
                     }
-                    send_message(chat_id, f"📥 <b>আপনার OTP:</b> <code>{otp_code}</code>", reply_markup=markup)
+                    
+                    otp_msg = (
+                        f"<b>Your WhatsApp Code</b> ({app_type})\n\n"
+                        f"🔑 <b>OTP:</b> <code>{otp_code}</code>\n"
+                        f"🌐 <b>Language:</b> <code>{detected_lang}</code>"
+                    )
+                    send_message(chat_id, otp_msg, reply_markup=markup)
                     
                     if OTP_GROUP_ID:
                         masked_num = mask_phone_number(phone)
                         group_msg = (
-                            f"🎉 <b>New OTP Received!</b>\n\n"
+                            f"🎉 <b>New OTP Received!</b> ({app_type})\n\n"
                             f"📱 <b>Number:</b> <code>{masked_num}</code>\n"
-                            f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>"
+                            f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>\n"
+                            f"🌐 <b>Language:</b> <code>{detected_lang}</code>"
                         )
                         send_message(OTP_GROUP_ID, group_msg)
                 else:
                     send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
 
-        # Admin View All Users
+        # Requirement #3: Sub-menu for User Management
+        elif data == "admin_user_mgmt_menu" and is_admin:
+            markup = {
+                "inline_keyboard": [
+                    [{"text": "👥 All User View", "callback_data": "admin_view_users", "style": "primary"}],
+                    [{"text": "🛒 Active Buyers List", "callback_data": "admin_view_buyers", "style": "success"}],
+                    [{"text": "🔎 Search User & Refund", "callback_data": "admin_search_user_btn", "style": "primary"}]
+                ]
+            }
+            send_message(chat_id, "<b>👥 USER MANAGEMENT OPTIONS:</b>\nএকটি অপশন বেছে নিন:", reply_markup=markup)
+
+        # Requirement #3: Option 1 - All User View
         elif data == "admin_view_users" and is_admin:
             users_list = get_all_users_info()
             if not users_list:
@@ -734,9 +902,63 @@ def handle_update(update):
                 buttons.append([{"text": display_title, "callback_data": f"inspect_u_{u_id}", "style": "primary"}])
 
             markup = {"inline_keyboard": buttons}
-            send_message(chat_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস ও নম্বর হিস্ট্রি দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
+            send_message(chat_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
 
-        # Admin Inspect Specific User History
+        # Requirement #3: Option 2 - Active Buyers List
+        elif data == "admin_view_buyers" and is_admin:
+            buyers_list = get_buyers_list()
+            if not buyers_list:
+                send_message(chat_id, "❌ <b>এখনও কোনো ইউজার নম্বর কেনেনি।</b>")
+                return
+
+            buttons = []
+            for u in buyers_list:
+                u_id, u_name, u_bal = u[0], u[1], u[2]
+                display_title = f"🛒 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"🛒 ID: {u_id} (${u_bal:.2f})"
+                buttons.append([{"text": display_title, "callback_data": f"inspect_buyer_{u_id}", "style": "success"}])
+
+            markup = {"inline_keyboard": buttons}
+            send_message(chat_id, f"🛒 <b>নম্বর ক্রয়কারী ইউজারদের তালিকা (মোট: {len(buyers_list)} জন):</b>\nকার কোন নম্বরে ওটিপি এসেছে তা দেখতে ক্লিক করুন:", reply_markup=markup)
+
+        # Requirement #3: Option 3 - Search User Button Action
+        elif data == "admin_search_user_btn" and is_admin:
+            user_states[user_id] = "ADMIN_SEARCH_USER"
+            send_message(chat_id, "🔎 <b>ইউজারের Username টি লিখে পাঠান:</b>\n(যেমন: `@username` বা `username`)", reply_markup=get_back_keyboard())
+
+        # Inspect Active Buyer Details
+        elif data.startswith("inspect_buyer_") and is_admin:
+            target_u_id = int(data.replace("inspect_buyer_", ""))
+            u_info = get_user(target_u_id)
+            
+            if not u_info:
+                send_message(chat_id, "❌ <b>ইউজার পাওয়া যায়নি!</b>")
+                return
+
+            orders = get_user_orders_all(target_u_id)
+            buyer_msg = (
+                f"🛒 <b>BUYER DETAILED HISTORY</b>\n\n"
+                f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
+                f"👤 <b>Username:</b> @{u_info[1]}\n"
+                f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
+                f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
+                f"🛒 <b>Total Purchased Numbers:</b> {len(orders)} টি\n\n"
+                f"<b>📋 ক্রয়ের হিস্ট্রি ও OTP স্ট্যাটাস:</b>\n"
+            )
+
+            for idx, ord_item in enumerate(orders, 1):
+                p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
+                status = f"✅ OTP Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
+                buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   📌 Status: {status}\n   🌐 Lang: {lang_t}\n\n"
+
+            markup = {
+                "inline_keyboard": [
+                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}],
+                    [{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers", "style": "primary"}]
+                ]
+            }
+            send_message(chat_id, buyer_msg, reply_markup=markup)
+
+        # Admin Inspect Specific User
         elif data.startswith("inspect_u_") and is_admin:
             target_u_id = int(data.replace("inspect_u_", ""))
             u_info = get_user(target_u_id)

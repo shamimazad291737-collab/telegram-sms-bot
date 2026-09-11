@@ -11,10 +11,10 @@ from pymongo import MongoClient
 # Language Detector Function with custom shortcodes
 def detect_language(text):
     if not text:
-        return "Unknown"
+        return "EN"
     # Chinese Character Range
     if re.search(r'[\u4e00-\u9fff]', text):
-        return "CH"
+        return "ZH"
     # Arabic Character Range
     elif re.search(r'[\u0600-\u06FF]', text):
         return "AR"
@@ -27,7 +27,7 @@ def detect_language(text):
     # Latin / English Range
     elif re.search(r'[a-zA-Z]', text):
         return "EN"
-    return "OTHERS"
+    return "EN"
 
 # Flask app initialization for Render Port Binding
 app = Flask(__name__)
@@ -48,6 +48,11 @@ OTP_GROUP_ID = os.environ.get("OTP_GROUP_ID", "")
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}/"
+
+# Custom Premium Emoji HTML Tags
+WA_EMOJI = '<tg-emoji emoji-id="5427009714745507009">🟢</tg-emoji>'
+USDT_EMOJI = '<tg-emoji emoji-id="5427009714745507009">💵</tg-emoji>'
+FIRE_EMOJI = '<tg-emoji emoji-id="5427009714745507009">🔥</tg-emoji>'
 
 # MongoDB Database Connection
 mongo_client = MongoClient(MONGO_URI)
@@ -198,6 +203,9 @@ def update_order_otp(phone, otp_code, app_type="WA", lang="EN"):
         {"$set": {"otp_code": otp_code, "app_type": app_type, "lang": lang}}
     )
 
+def get_user_orders_count(user_id):
+    return orders_col.count_documents({"user_id": user_id})
+
 def get_user_orders_all(user_id):
     rows = list(orders_col.find({"user_id": user_id}).sort("_id", -1))
     all_orders = []
@@ -310,9 +318,76 @@ def get_back_keyboard():
     kb = [[{"text": "⬅️ Back", "style": "danger"}]]
     return {"keyboard": kb, "resize_keyboard": True}
 
+# Admin Panel Inline Keyboard Builder (Single Popup Container)
+def get_admin_inline_keyboard(panel_type="main", extra_data=None):
+    bot_active = (get_bot_status() == "ON")
+    toggle_btn = {"text": "🔴 Turn OFF Bot", "callback_data": "admin_toggle_bot_off"} if bot_active else {"text": "🟢 Turn ON Bot", "callback_data": "admin_toggle_bot_on"}
+    
+    if panel_type == "main":
+        return {
+            "inline_keyboard": [
+                [toggle_btn],
+                [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_user_mgmt_menu"}],
+                [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate"}],
+                [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange"}],
+                [{"text": "📢 Dynamic Force Join (2 Channels)", "callback_data": "admin_set_channels"}],
+                [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast"}],
+                [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file"}],
+                [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock"}],
+                [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm"}]
+            ]
+        }
+    elif panel_type == "user_mgmt":
+        return {
+            "inline_keyboard": [
+                [{"text": "👥 All User View", "callback_data": "admin_view_users"}],
+                [{"text": "🛒 Active Buyers List", "callback_data": "admin_view_buyers"}],
+                [{"text": "🔎 Search User & Refund", "callback_data": "admin_search_user_btn"}],
+                [{"text": "⬅️ Back to Admin Main", "callback_data": "admin_main_menu"}]
+            ]
+        }
+    return {"inline_keyboard": []}
+
+# Helper to automatically update OTP from link even without explicit button press
+def sync_otp_status(phone, link):
+    order = get_order_by_phone(phone)
+    if not order:
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "*/*",
+            "Cache-Control": "no-cache"
+        }
+        api_link = link.replace("/sms/", "/api/sms/") if "/sms/" in link else link
+        response = requests.get(api_link, headers=headers, timeout=5)
+        api_text = response.text.strip()
+        raw_response_text = api_text
+        otp_code = None
+
+        if re.match(r'^\d{3,10}$', api_text):
+            otp_code = api_text
+        else:
+            main_res = requests.get(link, headers=headers, timeout=5)
+            raw_response_text = main_res.text
+            matches = re.findall(r'\b\d{6}\b', main_res.text)
+            clean_phone = re.sub(r'\D', '', phone)
+            for code in matches:
+                if code not in ['111111', '000000', '123456'] and code not in clean_phone:
+                    otp_code = code
+                    break
+
+        if otp_code:
+            app_type = "WB" if ("business" in raw_response_text.lower() or "smb" in raw_response_text.lower()) else "WA"
+            detected_lang = detect_language(raw_response_text)
+            update_order_otp(phone, otp_code, app_type=app_type, lang=detected_lang)
+            return otp_code, detected_lang, app_type
+    except Exception:
+        pass
+    return None
+
 # Core Update Handler
 def handle_update(update):
-    # Block Group Execution (Only Private Chat Allowed)
     msg_data = update.get("message") or update.get("callback_query", {}).get("message")
     if msg_data:
         chat_type = msg_data.get("chat", {}).get("type", "")
@@ -333,19 +408,16 @@ def handle_update(update):
         bdt_rate = get_bdt_per_usd()
         bot_active = (get_bot_status() == "ON")
 
-        # Handle Back Button Globally
         if text in ["⬅️ Back", "🔙 Back"]:
             if user_id in user_states:
                 del user_states[user_id]
             send_message(chat_id, "<b>মূল মেনুতে ফিরে আসা হয়েছে:</b>", reply_markup=get_main_keyboard(is_admin))
             return
 
-        # Check Bot OFF Status for Normal Users
         if not is_admin and not bot_active:
             send_message(chat_id, "⚠️ <b>সাময়িক সময়ের জন্য বট আপডেট করা হচ্ছে!</b>\nআপনারা একটু ধৈর্য ধরুন, এরপর জানিয়ে দেওয়া হবে। আপাতত কেউ ডিপোজিট বা নম্বর ক্রয় করবেন না। 🛑")
             return
 
-        # Force Join Verification Guard for Normal Users
         if not is_admin:
             is_joined, missing = verify_force_join(user_id)
             if not is_joined:
@@ -370,11 +442,9 @@ def handle_update(update):
                 )
                 return
 
-        # Input State Handling
         if user_id in user_states:
             state_data = user_states[user_id]
             
-            # Requirement #4: Multiple Number Quantity Input
             if isinstance(state_data, str) and state_data == "BUY_MULTI_QTY":
                 try:
                     qty = int(text)
@@ -409,14 +479,13 @@ def handle_update(update):
                     
                     res_msg = f"✅ <b>সফলভাবে {len(purchased_list)} টি নম্বর কেনা হয়েছে!</b>\n\n"
                     for idx, (p, l) in enumerate(purchased_list, 1):
-                        res_msg += f"<b>{idx}.</b> 📱 <code>{p}</code> | 🔗 {l}\n"
+                        res_msg += f"<b>{idx}.</b> {WA_EMOJI} <code>{p}</code> | 🔗 {l}\n"
                     
-                    res_msg += f"\n💰 <b>মোট ফি কাটা হয়েছে:</b> ${current_price * len(purchased_list):.2f} USD\n👉 যেকোনো একটির ওটিপি পেতে <b>Check OTP</b> বাটনে চাপ দিন।"
+                    res_msg += f"\n{USDT_EMOJI} <b>মোট ফি কাটা হয়েছে:</b> ${current_price * len(purchased_list):.2f} USD\n👉 যেকোনো একটির ওটিপি পেতে <b>Check OTP</b> বাটনে চাপ দিন।"
                     
-                    # Generates Inline Buttons for Multi-Check
                     multi_btns = []
-                    for p, l in purchased_list[:10]: # Max 10 buttons per view to avoid TG clutter
-                        multi_btns.append([{"text": f"🔄 Check OTP ({p})", "callback_data": f"chk_otp_{p}", "style": "primary"}])
+                    for p, l in purchased_list[:10]:
+                        multi_btns.append([{"text": f"🔄 Check OTP ({p})", "callback_data": f"chk_otp_{p}"}])
                     
                     send_message(chat_id, res_msg, reply_markup={"inline_keyboard": multi_btns})
                     send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
@@ -426,7 +495,6 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল পূর্ণসংখ্যা লিখুন (যেমন: 2, 5, 10)।")
                     return
 
-            # Requirement #3: Search User by Username
             if is_admin and isinstance(state_data, str) and state_data == "ADMIN_SEARCH_USER":
                 u_info = get_user_by_username(text)
                 if not u_info:
@@ -448,14 +516,13 @@ def handle_update(update):
 
                 markup = {
                     "inline_keyboard": [
-                        [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}]
+                        [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}"}]
                     ]
                 }
                 send_message(chat_id, search_res, reply_markup=markup)
                 del user_states[user_id]
                 return
 
-            # Change Exchange Rate
             if is_admin and state_data == "ADMIN_SET_EXCHANGE":
                 try:
                     new_rate = float(text)
@@ -466,7 +533,6 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            # Change Number Price
             if is_admin and state_data == "ADMIN_SET_PRICE":
                 try:
                     new_pr = float(text)
@@ -477,7 +543,6 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            # Dynamic Force Join Set (Strict 2 Channels Option)
             if is_admin and state_data == "ADMIN_SET_CHANNELS":
                 ch_list = [c.strip() for c in text.split(",") if c.strip()]
                 if len(ch_list) > 2:
@@ -488,8 +553,6 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            
-            # Deposit Step 1: Amount
             if isinstance(state_data, dict) and state_data.get("step") == "WAITING_AMOUNT":
                 method = state_data["method"]
                 try:
@@ -528,7 +591,6 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল সংখ্যা লিখুন। (যেমন: 120 বা 5)")
                     return
 
-            # Deposit Step 2: TrxID
             elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_TRX":
                 user_states[user_id] = {
                     "step": "WAITING_SCREENSHOT",
@@ -539,7 +601,6 @@ def handle_update(update):
                 send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_keyboard())
                 return
 
-            # Deposit Step 3: Screenshot
             elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_SCREENSHOT":
                 if "photo" in msg:
                     photo_file_id = msg["photo"][-1]["file_id"]
@@ -558,10 +619,10 @@ def handle_update(update):
                     admin_markup = {
                         "inline_keyboard": [
                             [
-                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}", "style": "success"},
-                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}", "style": "primary"}
+                                {"text": f"✅ Auto Approve (${converted_usd:.2f})", "callback_data": f"appusd_{user_id}_{usd_str_clean}"},
+                                {"text": "✏️ Custom Amount", "callback_data": f"dep_app_{user_id}"}
                             ],
-                            [{"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}", "style": "danger"}]
+                            [{"text": "❌ Reject Request", "callback_data": f"dep_rej_{user_id}"}]
                         ]
                     }
                     admin_caption = (
@@ -581,7 +642,6 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>", reply_markup=get_back_keyboard())
                     return
 
-            # Admin File Upload
             elif is_admin and state_data == "ADMIN_UPLOAD_FILE":
                 if "document" in msg:
                     doc = msg["document"]
@@ -612,7 +672,6 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি সঠিক টেক্সট (.txt / .csv) ফাইল আপলোড করুন।</b>", reply_markup=get_back_keyboard())
                     return
 
-            # Admin Custom Deposit Input
             elif isinstance(state_data, str) and state_data.startswith("ADMIN_APPROVE_AMOUNT_"):
                 target_user = int(state_data.replace("ADMIN_APPROVE_AMOUNT_", ""))
                 try:
@@ -625,7 +684,6 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            # Admin Refund Input
             elif isinstance(state_data, str) and state_data.startswith("ADMIN_REFUND_USER_"):
                 target_user = int(state_data.replace("ADMIN_REFUND_USER_", ""))
                 try:
@@ -638,7 +696,6 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-            # Admin Broadcast
             elif isinstance(state_data, str) and state_data == "ADMIN_BROADCAST":
                 all_users = get_all_users()
                 success, failed = 0, 0
@@ -656,29 +713,27 @@ def handle_update(update):
                 del user_states[user_id]
                 return
 
-        # Main Keyboards Handling
         if text == "/start":
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
 
-        # Requirement #4: Single vs Multiple Number Purchase Buttons
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"👤 Buy Single Number (${current_price:.2f})", "callback_data": "confirm_buy_usa", "style": "success"}],
-                    [{"text": "🔢 Buy Multiple Numbers", "callback_data": "buy_multi_num", "style": "primary"}]
+                    [{"text": f"👤 Buy Single Number (${current_price:.2f})", "callback_data": "confirm_buy_usa"}],
+                    [{"text": "🔢 Buy Multiple Numbers", "callback_data": "buy_multi_num"}]
                 ]
             }
-            send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
+            send_message(chat_id, f"<b>{WA_EMOJI} WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
             send_message(chat_id, "সার্ভিস অপশন বেছে নিন:", reply_markup=markup)
 
         elif text == "💳 DEPOSIT":
             dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(bdt_rate)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
             markup = {
                 "inline_keyboard": [
-                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash", "style": "primary"}],
-                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad", "style": "primary"}],
-                    [{"text": "🟡 Binance (Crypto USDT)", "callback_data": "dep_binance", "style": "success"}]
+                    [{"text": "💖 bKash (BDT)", "callback_data": "dep_bkash"}],
+                    [{"text": "🟠 Nagad (BDT)", "callback_data": "dep_nagad"}],
+                    [{"text": f"{USDT_EMOJI} Binance (Crypto USDT)", "callback_data": "dep_binance"}]
                 ]
             }
             send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
@@ -688,18 +743,20 @@ def handle_update(update):
             u_info = get_user(user_id)
             bal = u_info[2] if u_info else 0.0
             tot = u_info[3] if u_info else 0.0
+            total_purchased = get_user_orders_count(user_id)
+            
             prof_text = (
                 f"👤 <b>Your Profile Information</b>\n\n"
                 f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-                f"💰 <b>Current Balance:</b> ${bal:.2f} USD\n"
-                f"📊 <b>Total Recharge:</b> ${tot:.2f} USD"
+                f"{USDT_EMOJI} <b>Current Balance:</b> ${bal:.2f} USD\n"
+                f"📊 <b>Total Deposit:</b> ${tot:.2f} USD\n"
+                f"🛒 <b>Total Purchased Numbers:</b> {total_purchased} টি"
             )
             send_message(chat_id, prof_text, reply_markup=get_back_keyboard())
 
         elif text == "🎧 SUPPORT":
             send_message(chat_id, f"<b>যেকোনো সাহায্যে যোগাযোগ করুন:</b>\n👉 @{SUPPORT_USERNAME}", reply_markup=get_back_keyboard())
 
-        # Requirement #3: Updated Admin Panel User Management Menu
         elif text == "⚙️ ADMIN PANEL" and is_admin:
             chans = get_force_channels()
             chan_str = ", ".join(chans) if chans else "None"
@@ -712,23 +769,8 @@ def handle_update(update):
                 f"📢 <b>Force Channels (Max 2):</b> {chan_str}"
             )
             
-            toggle_btn = {"text": "🔴 Turn OFF Bot", "callback_data": "admin_toggle_bot_off", "style": "danger"} if bot_active else {"text": "🟢 Turn ON Bot", "callback_data": "admin_toggle_bot_on", "style": "success"}
-
-            markup = {
-                "inline_keyboard": [
-                    [toggle_btn],
-                    [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_user_mgmt_menu", "style": "success"}],
-                    [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
-                    [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange", "style": "primary"}],
-                    [{"text": "📢 Dynamic Force Join (2 Channels)", "callback_data": "admin_set_channels", "style": "success"}],
-                    [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "primary"}],
-                    [{"text": "📁 Upload Stock File", "callback_data": "admin_upload_file", "style": "success"}],
-                    [{"text": "📊 View Current Stock", "callback_data": "admin_view_stock", "style": "primary"}],
-                    [{"text": "🗑️ Delete All Stock", "callback_data": "admin_delete_stock_confirm", "style": "danger"}]
-                ]
-            }
-            send_message(chat_id, msg, reply_markup=get_back_keyboard())
-            send_message(chat_id, "এডমিন একশন সিলেক্ট করুন:", reply_markup=markup)
+            send_message(chat_id, "এডমিন প্যানেলে স্বাগতম:", reply_markup=get_back_keyboard())
+            send_message(chat_id, msg, reply_markup=get_admin_inline_keyboard("main"))
 
     elif "callback_query" in update:
         cb = update["callback_query"]
@@ -745,7 +787,6 @@ def handle_update(update):
         except Exception:
             pass
 
-        # Check Bot OFF Status for Callbacks (Non-Admin)
         if not is_admin and not bot_active and data != "verify_join":
             send_message(chat_id, "⚠️ <b>সাময়িক সময়ের জন্য বট বন্ধ রয়েছে!</b>\nএডমিন বট চালু করলে সেবা গ্রহণ করতে পারবেন।")
             return
@@ -753,14 +794,27 @@ def handle_update(update):
         current_price = get_number_price()
         bdt_rate = get_bdt_per_usd()
 
-        # Bot Status Toggle Callback
-        if data == "admin_toggle_bot_off" and is_admin:
+        # Navigation Callbacks inside Same Window Popup
+        if data == "admin_main_menu" and is_admin:
+            chans = get_force_channels()
+            chan_str = ", ".join(chans) if chans else "None"
+            status_str = "🟢 ONLINE" if bot_active else "🔴 OFF / MAINTENANCE"
+            msg = (
+                "<b>⚙️ ADMIN PANEL</b>\n\n"
+                f"🤖 <b>Bot Status:</b> {status_str}\n"
+                f"💰 <b>WhatsApp Price:</b> ${current_price:.2f} USD\n"
+                f"💱 <b>Exchange Rate:</b> 1 USD = ৳{int(bdt_rate)} BDT\n"
+                f"📢 <b>Force Channels (Max 2):</b> {chan_str}"
+            )
+            edit_message(chat_id, message_id, msg, reply_markup=get_admin_inline_keyboard("main"))
+
+        elif data == "admin_toggle_bot_off" and is_admin:
             set_bot_status("OFF")
-            send_message(chat_id, "🔴 <b>বট সফলভাবে বন্ধ করা হয়েছে!</b>\nইউজাররা এখন আর নম্বর কেনা বা ডিপোজিট রিকোয়েস্ট দিতে পারবে না।")
+            edit_message(chat_id, message_id, "🔴 <b>বট সফলভাবে বন্ধ করা হয়েছে!</b>", reply_markup=get_admin_inline_keyboard("main"))
 
         elif data == "admin_toggle_bot_on" and is_admin:
             set_bot_status("ON")
-            send_message(chat_id, "🟢 <b>বট সফলভাবে চালু করা হয়েছে!</b>\nইউজাররা স্বাভাবিকভাবে বট ব্যবহার করতে পারবে।")
+            edit_message(chat_id, message_id, "🟢 <b>বট সফলভাবে চালু করা হয়েছে!</b>", reply_markup=get_admin_inline_keyboard("main"))
 
         elif data == "verify_join":
             is_joined, _ = verify_force_join(user_id)
@@ -769,7 +823,6 @@ def handle_update(update):
             else:
                 send_message(chat_id, "❌ <b>আপনি এখনও সবগুলো চ্যানেলে জয়েন করেননি!</b>\nদয়া করে ২টি চ্যানেলেই জয়েন করে আবার ট্রাই করুন।")
 
-        # Requirement #4: Multiple Number Trigger Callback
         elif data == "buy_multi_num":
             user_states[user_id] = "BUY_MULTI_QTY"
             send_message(chat_id, "🔢 <b>আপনি কতগুলো নম্বর কিনতে চান লিখে পাঠান:</b>\n(যেমন: 2, 5, 10 ইত্যাদি)", reply_markup=get_back_keyboard())
@@ -792,104 +845,59 @@ def handle_update(update):
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}", "style": "primary"}],
-                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
+                    [{"text": "🔄 Check OTP", "callback_data": f"chk_otp_{phone}"}],
+                    [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
                 ]
             }
             res_text = (
                 f"✅ <b>নম্বর বরাদ্দ করা হয়েছে!</b>\n\n"
-                f"📱 <b>USA Number:</b> <code>{phone}</code>\n"
+                f"{WA_EMOJI} <b>USA Number:</b> <code>{phone}</code>\n"
                 f"🔗 <b>OTP Link:</b> {link}\n"
-                f"💰 <b>ফি কাটা হয়েছে:</b> ${current_price:.2f} USD\n\n"
+                f"{USDT_EMOJI} <b>ফি কাটা হয়েছে:</b> ${current_price:.2f} USD\n\n"
                 f"👉 নম্বরটি অ্যাপে ব্যবহার করার পর <b>Check OTP</b> বাটনে চাপ দিন।"
             )
             
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # Requirements #1 & #2: Header, App Identification & Language Scraping
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
             
             if order:
                 link = order[2]
-                otp_code = None
-                raw_response_text = ""
-                
-                try:
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                        "Accept": "*/*",
-                        "Cache-Control": "no-cache"
-                    }
+                res = sync_otp_status(phone, link)
 
-                    api_link = link.replace("/sms/", "/api/sms/") if "/sms/" in link else link
-                    response = requests.get(api_link, headers=headers, timeout=8)
-                    api_text = response.text.strip()
-                    raw_response_text = api_text
-
-                    if re.match(r'^\d{3,10}$', api_text):
-                        otp_code = api_text
-                    else:
-                        main_res = requests.get(link, headers=headers, timeout=8)
-                        raw_response_text = main_res.text
-                        matches = re.findall(r'\b\d{6}\b', main_res.text)
-                        clean_phone = re.sub(r'\D', '', phone)
-                        
-                        for code in matches:
-                            if code not in ['111111', '000000', '123456'] and code not in clean_phone:
-                                otp_code = code
-                                break
-
-                except Exception as e:
-                    print(f"OTP Scraping Error: {e}")
-
-                if otp_code:
-                    # App Detection Logic
-                    app_type = "WB" if ("business" in raw_response_text.lower() or "smb" in raw_response_text.lower()) else "WA"
-                    # Language Detection Logic
-                    detected_lang = detect_language(raw_response_text)
-
-                    update_order_otp(phone, otp_code, app_type=app_type, lang=detected_lang)
-                    
+                if res:
+                    otp_code, detected_lang, app_type = res
                     markup = {
                         "inline_keyboard": [
-                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa", "style": "success"}]
+                            [{"text": "🛒 Buy Another Number", "callback_data": "confirm_buy_usa"}]
                         ]
                     }
                     
                     otp_msg = (
                         f"<b>Your WhatsApp Code ({app_type})</b>\n\n"
                         f"🔑 <b>OTP:</b> <code>{otp_code}</code>\n"
-                        f"🌐 <b>Language:</b> <code>{detected_lang}</code>"
+                        f"🌐 <b>Language:</b> <code>[{detected_lang}]</code>"
                     )
                     send_message(chat_id, otp_msg, reply_markup=markup)
                     
                     if OTP_GROUP_ID:
                         masked_num = mask_phone_number(phone)
                         group_msg = (
-                            f"🎉 <b>New OTP Received! ({app_type})</b>\n\n"
-                            f"📱 <b>Number:</b> <code>{masked_num}</code>\n"
+                            f"{FIRE_EMOJI} <b>New OTP Received! ({app_type})</b>\n\n"
+                            f"{WA_EMOJI} <b>Number:</b> <code>{masked_num}</code>\n"
                             f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>\n"
-                            f"🌐 <b>Language:</b> <code>{detected_lang}</code>"
+                            f"🌐 <b>Language:</b> <code>[{detected_lang}]</code>"
                         )
                         send_message(OTP_GROUP_ID, group_msg)
                 else:
                     send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
 
-        # Requirement #3: Sub-menu for User Management
         elif data == "admin_user_mgmt_menu" and is_admin:
-            markup = {
-                "inline_keyboard": [
-                    [{"text": "👥 All User View", "callback_data": "admin_view_users", "style": "primary"}],
-                    [{"text": "🛒 Active Buyers List", "callback_data": "admin_view_buyers", "style": "success"}],
-                    [{"text": "🔎 Search User & Refund", "callback_data": "admin_search_user_btn", "style": "primary"}]
-                ]
-            }
-            send_message(chat_id, "<b>👥 USER MANAGEMENT OPTIONS:</b>\nএকটি অপশন বেছে নিন:", reply_markup=markup)
+            edit_message(chat_id, message_id, "<b>👥 USER MANAGEMENT OPTIONS:</b>\nএকটি অপশন বেছে নিন:", reply_markup=get_admin_inline_keyboard("user_mgmt"))
 
-        # Requirement #3: Option 1 - All User View
         elif data == "admin_view_users" and is_admin:
             users_list = get_all_users_info()
             if not users_list:
@@ -900,12 +908,12 @@ def handle_update(update):
             for u in users_list:
                 u_id, u_name, u_bal = u[0], u[1], u[2]
                 display_title = f"👤 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"👤 ID: {u_id} (${u_bal:.2f})"
-                buttons.append([{"text": display_title, "callback_data": f"inspect_u_{u_id}", "style": "primary"}])
-
+                buttons.append([{"text": display_title, "callback_data": f"inspect_u_{u_id}"}])
+            
+            buttons.append([{"text": "⬅️ Back", "callback_data": "admin_user_mgmt_menu"}])
             markup = {"inline_keyboard": buttons}
-            send_message(chat_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
+            edit_message(chat_id, message_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
 
-        # Requirement #3: Option 2 - Active Buyers List
         elif data == "admin_view_buyers" and is_admin:
             buyers_list = get_buyers_list()
             if not buyers_list:
@@ -916,17 +924,16 @@ def handle_update(update):
             for u in buyers_list:
                 u_id, u_name, u_bal = u[0], u[1], u[2]
                 display_title = f"🛒 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"🛒 ID: {u_id} (${u_bal:.2f})"
-                buttons.append([{"text": display_title, "callback_data": f"inspect_buyer_{u_id}", "style": "success"}])
+                buttons.append([{"text": display_title, "callback_data": f"inspect_buyer_{u_id}"}])
 
+            buttons.append([{"text": "⬅️ Back", "callback_data": "admin_user_mgmt_menu"}])
             markup = {"inline_keyboard": buttons}
-            send_message(chat_id, f"🛒 <b>নম্বর ক্রয়কারী ইউজারদের তালিকা (মোট: {len(buyers_list)} জন):</b>\nকার কোন নম্বরে ওটিপি এসেছে তা দেখতে ক্লিক করুন:", reply_markup=markup)
+            edit_message(chat_id, message_id, f"🛒 <b>নম্বর ক্রয়কারী ইউজারদের তালিকা (মোট: {len(buyers_list)} জন):</b>\nকার কোন নম্বরে ওটিপি এসেছে তা দেখতে ক্লিক করুন:", reply_markup=markup)
 
-        # Requirement #3: Option 3 - Search User Button Action
         elif data == "admin_search_user_btn" and is_admin:
             user_states[user_id] = "ADMIN_SEARCH_USER"
             send_message(chat_id, "🔎 <b>ইউজারের Username টি লিখে পাঠান:</b>\n(যেমন: `@username` বা `username`)", reply_markup=get_back_keyboard())
 
-       # Inspect Active Buyer Details
         elif data.startswith("inspect_buyer_") and is_admin:
             target_u_id = int(data.replace("inspect_buyer_", ""))
             u_info = get_user(target_u_id)
@@ -940,7 +947,7 @@ def handle_update(update):
                 f"🛒 <b>BUYER DETAILED HISTORY</b>\n\n"
                 f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
                 f"👤 <b>Username:</b> @{u_info[1]}\n"
-                f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
+                f"{USDT_EMOJI} <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
                 f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
                 f"🛒 <b>Total Purchased Numbers:</b> {len(orders)} টি\n\n"
                 f"<b>📋 ক্রয়ের হিস্ট্রি ও OTP স্ট্যাটাস:</b>\n"
@@ -948,18 +955,24 @@ def handle_update(update):
 
             for idx, ord_item in enumerate(orders, 1):
                 p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
+                
+                # Auto Sync Check if OTP was received directly from link without clicking Check OTP
+                if not otp_c:
+                    sync_res = sync_otp_status(p_num, otp_l)
+                    if sync_res:
+                        otp_c, lang_t, app_t = sync_res
+
                 status = f"✅ OTP Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
-                buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   📌 Status: {status}\n   🌐 Lang: {lang_t}\n\n"
+                buyer_msg += f"<b>{idx}.</b> {WA_EMOJI} <code>{p_num}</code>\n   📅 Date: {p_date}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}],
-                    [{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers", "style": "primary"}]
+                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}"}],
+                    [{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers"}]
                 ]
             }
-            send_message(chat_id, buyer_msg, reply_markup=markup)
+            edit_message(chat_id, message_id, buyer_msg, reply_markup=markup)
 
-        # Admin Inspect Specific User
         elif data.startswith("inspect_u_") and is_admin:
             target_u_id = int(data.replace("inspect_u_", ""))
             u_info = get_user(target_u_id)
@@ -973,7 +986,7 @@ def handle_update(update):
                 f"👤 <b>USER DETAILS & HISTORY (LAST 24 HOURS)</b>\n\n"
                 f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
                 f"👤 <b>Username:</b> @{u_info[1]}\n"
-                f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
+                f"{USDT_EMOJI} <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
                 f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
                 f"🛒 <b>Purchased Numbers (Last 24h):</b> {len(orders)} টি\n\n"
                 f"<b>📋 গত ২৪ ঘণ্টার ক্রয়ের হিস্ট্রি, লিংক ও OTP স্ট্যাটাস:</b>\n"
@@ -984,18 +997,23 @@ def handle_update(update):
             else:
                 for idx, ord_item in enumerate(orders, 1):
                     p_num, otp_c, p_date, otp_l = ord_item[0], ord_item[1], ord_item[2], ord_item[3]
+                    
+                    if not otp_c:
+                        sync_res = sync_otp_status(p_num, otp_l)
+                        if sync_res:
+                            otp_c = sync_res[0]
+
                     status = f"✅ OTP Received ({otp_c})" if otp_c else "❌ OTP Pending / Not Received"
-                    user_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n\n"
+                    user_msg += f"<b>{idx}.</b> {WA_EMOJI} <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n\n"
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}],
-                    [{"text": "⬅️ Back to User List", "callback_data": "admin_view_users", "style": "primary"}]
+                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}"}],
+                    [{"text": "⬅️ Back to User List", "callback_data": "admin_view_users"}]
                 ]
             }
-            send_message(chat_id, user_msg, reply_markup=markup)
+            edit_message(chat_id, message_id, user_msg, reply_markup=markup)
 
-        # Admin Controls Callback Setup
         elif data == "admin_set_exchange" and is_admin:
             user_states[user_id] = "ADMIN_SET_EXCHANGE"
             send_message(chat_id, f"💱 <b>নতুন BDT to USD রেট লিখে পাঠান:</b>\n(যেমন: 120, 122, 125 ইত্যাদি। বর্তমান রেট: ৳{int(bdt_rate)})", reply_markup=get_back_keyboard())
@@ -1019,7 +1037,7 @@ def handle_update(update):
 
         elif data == "dep_binance":
             user_states[user_id] = {"step": "WAITING_AMOUNT", "method": "BINANCE"}
-            send_message(chat_id, "🟡 <b>Binance Deposit Selected</b>\n\nকত <b>USDT</b> (USD) ডিপোজিট করতে চান লিখে পাঠান:", reply_markup=get_back_keyboard())
+            send_message(chat_id, f"{USDT_EMOJI} <b>Binance Deposit Selected</b>\n\nকত <b>USDT</b> (USD) ডিপোজিট করতে চান লিখে পাঠান:", reply_markup=get_back_keyboard())
 
         elif data == "admin_set_rate" and is_admin:
             user_states[user_id] = "ADMIN_SET_PRICE"
@@ -1036,22 +1054,25 @@ def handle_update(update):
         elif data == "admin_view_stock" and is_admin:
             stock_items = get_all_stock()
             if not stock_items:
-                send_message(chat_id, "📊 <b>বর্তমানে স্টকে কোনো নম্বর খালি নেই!</b>")
+                edit_message(chat_id, message_id, "📊 <b>বর্তমানে স্টকে কোনো নম্বর খালি নেই!</b>", reply_markup=get_admin_inline_keyboard("main"))
             else:
                 stock_text = f"📊 <b>বর্তমান স্টকে থাকা নম্বরসমূহ (মোট: {len(stock_items)} টি):</b>\n\n"
                 for item in stock_items[:30]:
-                    stock_text += f"📱 <code>{item[1]}</code>\n🔗 {item[2]}\n\n"
+                    stock_text += f"{WA_EMOJI} <code>{item[1]}</code>\n🔗 {item[2]}\n\n"
                 if len(stock_items) > 30:
                     stock_text += f"<i>...এবং আরও {len(stock_items) - 30} টি নম্বর রয়েছে।</i>"
-                send_message(chat_id, stock_text)
+                edit_message(chat_id, message_id, stock_text, reply_markup=get_admin_inline_keyboard("main"))
 
         elif data == "admin_delete_stock_confirm" and is_admin:
-            markup = {"inline_keyboard": [[{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]]}
+            markup = {"inline_keyboard": [
+                [{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute"}],
+                [{"text": "⬅️ Cancel", "callback_data": "admin_main_menu"}]
+            ]}
             edit_message(chat_id, message_id, "⚠️ <b>আপনি কি নিশ্চিতভাবে সমস্ত স্টক ফাইল/নম্বর মুছে ফেলতে চান?</b>", reply_markup=markup)
 
         elif data == "admin_delete_stock_execute" and is_admin:
             clear_all_stock()
-            edit_message(chat_id, message_id, "🗑️ <b>সফলভাবে সমস্ত স্টকে থাকা নম্বর ও লিংক ডিলিট করা হয়েছে!</b>")
+            edit_message(chat_id, message_id, "🗑️ <b>সফলভাবে সমস্ত স্টকে থাকা নম্বর ও লিংক ডিলিট করা হয়েছে!</b>", reply_markup=get_admin_inline_keyboard("main"))
 
         elif data.startswith("appusd_") and is_admin:
             parts = data.split("_")

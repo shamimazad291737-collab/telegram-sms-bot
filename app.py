@@ -8,23 +8,40 @@ from datetime import datetime, timedelta
 from flask import Flask
 from pymongo import MongoClient
 
-# Language Detector Function with custom shortcodes
+# Language Detector Function with expanded shortcodes mapping & fix
 def detect_language(text):
     if not text:
         return "OTHERS"
-    # Chinese Character Range
+    
+    clean_text = text.lower().strip()
+    
+    # Direct shortcode matching
+    if clean_text in ['en', 'eng', 'english', 'us', 'gb']:
+        return "EN"
+    elif clean_text in ['bn', 'ben', 'bengali']:
+        return "BN"
+    elif clean_text in ['hi', 'hin', 'hindi']:
+        return "HI"
+    elif clean_text in ['ar', 'arabic']:
+        return "AR"
+    elif clean_text in ['ru', 'russian']:
+        return "RU"
+    elif clean_text in ['zh', 'chinese', 'cn']:
+        return "ZH"
+    elif clean_text in ['es', 'spanish']:
+        return "ES"
+    elif clean_text in ['fr', 'french']:
+        return "FR"
+
+    # Regex character range checks
     if re.search(r'[\u4e00-\u9fff]', text):
         return "ZH"
-    # Arabic Character Range
     elif re.search(r'[\u0600-\u06FF]', text):
         return "AR"
-    # Cyrillic / Russian Range
     elif re.search(r'[\u0400-\u04FF]', text):
         return "RU"
-    # Hindi Range
     elif re.search(r'[\u0900-\u097F]', text):
         return "HI"
-    # Latin / English Range
     elif re.search(r'[a-zA-Z]', text):
         return "EN"
     return "OTHERS"
@@ -55,6 +72,8 @@ db = mongo_client["telegram_otp_bot"]
 
 users_col = db["users"]
 stock_col = db["stock"]
+vpn_stock_col = db["vpn_stock"]
+vpn_orders_col = db["vpn_orders"]
 orders_col = db["active_orders"]
 settings_col = db["settings"]
 user_states_col = db["user_states"] # Database state collection to fix state loss issue
@@ -75,6 +94,10 @@ def delete_user_state(user_id):
 def init_settings():
     if not settings_col.find_one({"key": "number_price"}):
         settings_col.insert_one({"key": "number_price", "value": "0.10"})
+    if not settings_col.find_one({"key": "nord_price"}):
+        settings_col.insert_one({"key": "nord_price", "value": "1.00"})
+    if not settings_col.find_one({"key": "proton_price"}):
+        settings_col.insert_one({"key": "proton_price", "value": "1.00"})
     if not settings_col.find_one({"key": "bdt_per_usd"}):
         settings_col.insert_one({"key": "bdt_per_usd", "value": "120.0"})
     if not settings_col.find_one({"key": "force_channels"}):
@@ -109,6 +132,15 @@ def get_number_price():
 
 def set_number_price(new_price):
     settings_col.update_one({"key": "number_price"}, {"$set": {"value": str(new_price)}}, upsert=True)
+
+def get_vpn_price(service):
+    key = "nord_price" if service == "nord" else "proton_price"
+    doc = settings_col.find_one({"key": key})
+    return float(doc["value"]) if doc else 1.00
+
+def set_vpn_price(service, new_price):
+    key = "nord_price" if service == "nord" else "proton_price"
+    settings_col.update_one({"key": key}, {"$set": {"value": str(new_price)}}, upsert=True)
 
 def get_bdt_per_usd():
     doc = settings_col.find_one({"key": "bdt_per_usd"})
@@ -150,6 +182,29 @@ def get_all_stock():
 
 def clear_all_stock():
     stock_col.delete_many({})
+
+def add_vpn_stock_item(service, account_data):
+    vpn_stock_col.insert_one({"service": service, "account": account_data})
+
+def get_vpn_stock_count(service):
+    return vpn_stock_col.count_documents({"service": service})
+
+def pop_vpn_stock_item(service):
+    item = vpn_stock_col.find_one_and_delete({"service": service})
+    if item:
+        return item["account"]
+    return None
+
+def save_vpn_order(user_id, service, amount):
+    now_str = datetime.now().strftime("%d-%b-%Y %I:%M %p")
+    res = vpn_orders_col.insert_one({
+        "user_id": user_id,
+        "service": service,
+        "amount": amount,
+        "status": "PENDING",
+        "date": now_str
+    })
+    return str(res.inserted_id)
 
 def get_user(user_id):
     u = users_col.find_one({"user_id": user_id})
@@ -333,10 +388,13 @@ def get_main_keyboard(is_admin=False):
     kb = [
         [
             {"text": "🛒 BUY NUMBER", "style": "success"},
-            {"text": "💳 DEPOSIT", "style": "primary"}
+            {"text": "🛡️ BUY VPN", "style": "primary"}
         ],
         [
-            {"text": "👤 PROFILE", "style": "primary"},
+            {"text": "💳 DEPOSIT", "style": "primary"},
+            {"text": "👤 PROFILE", "style": "primary"}
+        ],
+        [
             {"text": "🎧 SUPPORT", "style": "primary"}
         ]
     ]
@@ -352,6 +410,8 @@ def get_back_keyboard():
 def get_admin_panel_data():
     bot_active = (get_bot_status() == "ON")
     current_price = get_number_price()
+    nord_pr = get_vpn_price("nord")
+    proton_pr = get_vpn_price("proton")
     bdt_rate = get_bdt_per_usd()
     chans = get_force_channels()
     chan_str = ", ".join(chans) if chans else "None"
@@ -361,6 +421,7 @@ def get_admin_panel_data():
         "<b>⚙️ ADMIN PANEL</b>\n\n"
         f"🤖 <b>Bot Status:</b> {status_str}\n"
         f"💰 <b>WhatsApp Price:</b> ${current_price:.2f} USD\n"
+        f"🛡️ <b>NordVPN Price:</b> ${nord_pr:.2f} USD | <b>ProtonVPN Price:</b> ${proton_pr:.2f} USD\n"
         f"💱 <b>Exchange Rate:</b> 1 USD = ৳{int(bdt_rate)} BDT\n"
         f"📢 <b>Force Channels (Max 2):</b> {chan_str}"
     )
@@ -372,6 +433,8 @@ def get_admin_panel_data():
             [toggle_btn],
             [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_user_mgmt_menu", "style": "success"}],
             [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
+            [{"text": "🛡️ Set NordVPN Price", "callback_data": "admin_set_nord_price", "style": "primary"}, {"text": "🛡️ Set ProtonVPN Price", "callback_data": "admin_set_proton_price", "style": "primary"}],
+            [{"text": "📁 Upload VPN Stock File", "callback_data": "admin_upload_vpn_file", "style": "success"}],
             [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange", "style": "primary"}],
             [{"text": "📢 Dynamic Force Join (2 Channels)", "callback_data": "admin_set_channels", "style": "success"}],
             [{"text": "📢 Broadcast Message", "callback_data": "admin_broadcast", "style": "primary"}],
@@ -381,6 +444,68 @@ def get_admin_panel_data():
         ]
     }
     return msg, markup
+
+# Helper Generator for Buyer Details with Pagination System
+def render_buyer_page(target_u_id, page=1, items_per_page=10):
+    u_info = get_user(target_u_id)
+    if not u_info:
+        return "❌ <b>ইউজার পাওয়া যায়নি!</b>", {"inline_keyboard": []}
+
+    orders = get_user_orders_all(target_u_id)
+    total_purchased = len(orders)
+    otp_sent_count = sum(1 for o in orders if o[1])
+    failed_count = total_purchased - otp_sent_count
+    success_rate = (otp_sent_count / total_purchased * 100) if total_purchased > 0 else 0.0
+
+    total_pages = (total_purchased + items_per_page - 1) // items_per_page
+    if total_pages == 0:
+        total_pages = 1
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+
+    buyer_msg = (
+        f"🛒 <b>BUYER DETAILED HISTORY</b>\n\n"
+        f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
+        f"👤 <b>Username:</b> @{u_info[1]}\n"
+        f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
+        f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n\n"
+        f"📈 <b>BUYER STATS:</b>\n"
+        f"🔹 Total Bought: <b>{total_purchased}</b>\n"
+        f"✅ OTP Sent (Success): <b>{otp_sent_count}</b>\n"
+        f"❌ OTP Failed: <b>{failed_count}</b>\n"
+        f"🎯 Success Rate: <b>{success_rate:.1f}%</b>\n\n"
+        f"<b>📋 ক্রয়ের হিস্ট্রি ও OTP স্ট্যাটাস (Page {page}/{total_pages}):</b>\n\n"
+    )
+
+    if not orders:
+        buyer_msg += "<i>কোনো নম্বরের তথ্য পাওয়া যায়নি।</i>\n"
+    else:
+        start_idx = (page - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        page_orders = orders[start_idx:end_idx]
+
+        for idx, ord_item in enumerate(page_orders, start=start_idx + 1):
+            p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
+            status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
+            buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
+
+    # Pagination Nav Buttons
+    nav_buttons = []
+    if total_pages > 1:
+        row = []
+        if page > 1:
+            row.append({"text": f"◀️ Page {page-1}", "callback_data": f"pb_{target_u_id}_{page-1}", "style": "primary"})
+        row.append({"text": f"📄 {page}/{total_pages}", "callback_data": "noop"})
+        if page < total_pages:
+            row.append({"text": f"Page {page+1} ▶️", "callback_data": f"pb_{target_u_id}_{page+1}", "style": "primary"})
+        nav_buttons.append(row)
+
+    nav_buttons.append([{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}])
+    nav_buttons.append([{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers", "style": "primary"}])
+
+    return buyer_msg, {"inline_keyboard": nav_buttons}
 
 # Helper Generator for Buyer Details with Pagination System
 def render_buyer_page(target_u_id, page=1, items_per_page=10):
@@ -499,6 +624,7 @@ def render_user_page(target_u_id, page=1, items_per_page=10):
 
     return user_msg, {"inline_keyboard": nav_buttons}
 
+
 # Core Update Handler
 def handle_update(update):
     try:
@@ -522,6 +648,24 @@ def handle_update(update):
             current_price = get_number_price()
             bdt_rate = get_bdt_per_usd()
             bot_active = (get_bot_status() == "ON")
+
+            # Admin Reply Handler for VPN Orders
+            if is_admin and "reply_to_message" in msg:
+                reply_msg = msg["reply_to_message"]
+                reply_text = reply_msg.get("text", "")
+                if "VPN ORDER #" in reply_text:
+                    match = re.search(r'VPN ORDER #([a-f0-9]+)', reply_text)
+                    user_match = re.search(r'User ID: (\d+)', reply_text)
+                    if user_match:
+                        target_u_id = int(user_match.group(1))
+                        vpn_account_info = text.strip()
+                        
+                        send_message(
+                            target_u_id, 
+                            f"🎉 <b>Your order is completed!</b>\n\n<b>VPN Details:</b>\n<code>{vpn_account_info}</code>"
+                        )
+                        send_message(chat_id, f"✅ <b>Order notification & VPN details successfully sent to User {target_u_id}!</b>")
+                        return
 
             # Handle Back Button Globally
             if text in ["⬅️ Back", "🔙 Back"]:
@@ -562,6 +706,48 @@ def handle_update(update):
             # Input State Handling from Database
             state_data = get_user_state(user_id)
             if state_data:
+                # Set VPN Prices
+                if is_admin and state_data in ["ADMIN_SET_NORD_PRICE", "ADMIN_SET_PROTON_PRICE"]:
+                    service = "nord" if state_data == "ADMIN_SET_NORD_PRICE" else "proton"
+                    try:
+                        new_p = float(text)
+                        set_vpn_price(service, new_p)
+                        send_message(chat_id, f"✅ <b>{service.capitalize()}VPN Price updated to: ${new_p:.2f} USD</b>", reply_markup=get_main_keyboard(is_admin))
+                    except ValueError:
+                        send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> সঠিক সংখ্যা লিখুন (যেমন: 1.50)।")
+                    delete_user_state(user_id)
+                    return
+
+                # Admin Upload VPN Stock File Step 2
+                if is_admin and isinstance(state_data, dict) and state_data.get("step") == "ADMIN_UPLOAD_VPN_FILE":
+                    service = state_data.get("service")
+                    if "document" in msg:
+                        doc = msg["document"]
+                        file_name = doc.get("file_name", "").lower()
+                        if not (file_name.endswith(".txt") or file_name.endswith(".csv")):
+                            send_message(chat_id, "❌ <b>দয়া করে শুধুমাত্র .txt অথবা .csv ফাইল আপলোড করুন!</b>", reply_markup=get_back_keyboard())
+                            return
+
+                        file_id = doc["file_id"]
+                        file_info = requests.get(BASE_URL + f"getFile?file_id={file_id}").json()
+                        if file_info.get("ok"):
+                            file_path = file_info["result"]["file_path"]
+                            content = requests.get(f"https://api.telegram.org/file/bot{TOKEN}/{file_path}").text
+                            
+                            count = 0
+                            for line in content.splitlines():
+                                line = line.strip()
+                                if line and ":" in line:
+                                    add_vpn_stock_item(service, line)
+                                    count += 1
+                            
+                            send_message(chat_id, f"✅ <b>সফলভাবে {count} টি {service.capitalize()}VPN অ্যাকাউন্ট স্টকে আপলোড করা হয়েছে!</b>", reply_markup=get_main_keyboard(is_admin))
+                            delete_user_state(user_id)
+                            return
+                    else:
+                        send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি সঠিক টেক্সট (.txt / .csv) ফাইল আপলোড করুন।</b>", reply_markup=get_back_keyboard())
+                        return
+
                 # Multiple Number Quantity Input
                 if isinstance(state_data, str) and state_data == "BUY_MULTI_QTY":
                     try:
@@ -849,6 +1035,18 @@ def handle_update(update):
                 send_message(chat_id, f"<b>WhatsApp Service Selected:</b>\n\nমূল্য: <b>${current_price:.2f} USD / Number</b>", reply_markup=get_back_keyboard())
                 send_message(chat_id, "সার্ভিস অপশন বেছে নিন:", reply_markup=markup)
 
+            elif text == "🛡️ BUY VPN":
+                nord_pr = get_vpn_price("nord")
+                proton_pr = get_vpn_price("proton")
+                markup = {
+                    "inline_keyboard": [
+                        [{"text": f"🛡️ NordVPN (${nord_pr:.2f})", "callback_data": "buy_vpn_nord", "style": "primary"}],
+                        [{"text": "🛡️ ProtonVPN (${:.2f})".format(proton_pr), "callback_data": "buy_vpn_proton", "style": "primary"}]
+                    ]
+                }
+                send_message(chat_id, "🛡️ <b>Select VPN Service:</b>\n\nপছন্দের VPN সার্ভিস বেছে নিন:", reply_markup=get_back_keyboard())
+                send_message(chat_id, "উপলব্ধ ভিপিএন সার্ভিসসমূহ:", reply_markup=markup)
+
             elif text == "💳 DEPOSIT":
                 dep_text = f"💳 <b>Deposit Options</b>\n\n<i>নোট: ৳{int(bdt_rate)} BDT = $1.00 USD ডাইনামিক কনভার্ট হবে।</i>\n\nআপনার সুবিধাজনক পেমেন্ট মেথডটি বেছে নিন:"
                 markup = {
@@ -906,6 +1104,33 @@ def handle_update(update):
             bdt_rate = get_bdt_per_usd()
 
             if data == "noop":
+                return
+
+            # VPN Buy Callbacks
+            if data.startswith("buy_vpn_"):
+                service = "nord" if "nord" in data else "proton"
+                pr = get_vpn_price(service)
+                u_info = get_user(user_id)
+                bal = u_info[2] if u_info else 0.0
+
+                if bal < pr:
+                    edit_message(chat_id, message_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\n{service.capitalize()}VPN কিনতে ${pr:.2f} USD লাগবে। আপনার ব্যালেন্স: ${bal:.2f} USD।")
+                    return
+
+                deduct_balance(user_id, pr)
+                order_id = save_vpn_order(user_id, service, pr)
+
+                # Admin Notification
+                admin_notif = (
+                    f"🚨 <b>NEW VPN ORDER #{order_id}</b>\n\n"
+                    f"👤 <b>User ID:</b> <code>{user_id}</code>\n"
+                    f"🛡️ <b>Service:</b> {service.upper()}VPN\n"
+                    f"💰 <b>Price:</b> ${pr:.2f} USD\n\n"
+                    f"👉 <i>এই মেসেজটিতে Reply দিয়ে ইমেইল ও পাসওয়ার্ড লিখে দিন (যেমন: email:password)।</i>"
+                )
+                send_message(ADMIN_ID, admin_notif)
+
+                edit_message(chat_id, message_id, f"✅ <b>আপনার {service.capitalize()}VPN অর্ডারটি গ্রহণ করা হয়েছে!</b>\n\n💰 ফি কাটা হয়েছে: ${pr:.2f} USD\n⏳ অল্প কিছুক্ষণের মধ্যে এডমিন আপনার ভিপিএন এর ইমেইল এবং পাসওয়ার্ড পাঠিয়ে দেবে।")
                 return
 
             # Bot Status Toggle Callback
@@ -1102,7 +1327,7 @@ def handle_update(update):
                 set_user_state(user_id, "ADMIN_SEARCH_USER")
                 send_message(chat_id, "🔎 <b>ইউজারের Username টি লিখে পাঠান:</b>\n(যেমন: `@username` বা `username`)", reply_markup=get_back_keyboard())
 
-            # PAGINATION CALLBACK FOR ACTIVE BUYERS PAGE NAVIGATION (pb_USERID_PAGE / insp_b_)
+            # PAGINATION CALLBACK FOR ACTIVE BUYERS PAGE NAVIGATION
             elif (data.startswith("pb_") or data.startswith("insp_b_") or data.startswith("inspect_buyer_")) and is_admin:
                 clean_data = data.replace("insp_b_", "").replace("inspect_buyer_", "")
                 if clean_data.startswith("pb_"):
@@ -1116,7 +1341,7 @@ def handle_update(update):
                 buyer_msg, buyer_markup = render_buyer_page(target_u_id, page=page_num)
                 edit_message(chat_id, message_id, buyer_msg, reply_markup=buyer_markup)
 
-            # PAGINATION CALLBACK FOR USER DETAILS PAGE NAVIGATION (pu_USERID_PAGE / insp_u_)
+            # PAGINATION CALLBACK FOR USER DETAILS PAGE NAVIGATION
             elif (data.startswith("pu_") or data.startswith("insp_u_") or data.startswith("inspect_u_")) and is_admin:
                 clean_data = data.replace("insp_u_", "").replace("inspect_u_", "")
                 if clean_data.startswith("pu_"):
@@ -1129,6 +1354,28 @@ def handle_update(update):
 
                 user_msg, user_markup = render_user_page(target_u_id, page=page_num)
                 edit_message(chat_id, message_id, user_msg, reply_markup=user_markup)
+
+            elif data == "admin_set_nord_price" and is_admin:
+                set_user_state(user_id, "ADMIN_SET_NORD_PRICE")
+                send_message(chat_id, "🛡️ <b>NordVPN-এর নতুন মূল্য ($ USD) লিখে পাঠান:</b>", reply_markup=get_back_keyboard())
+
+            elif data == "admin_set_proton_price" and is_admin:
+                set_user_state(user_id, "ADMIN_SET_PROTON_PRICE")
+                send_message(chat_id, "🛡️ <b>ProtonVPN-এর নতুন মূল্য ($ USD) লিখে পাঠান:</b>", reply_markup=get_back_keyboard())
+
+            elif data == "admin_upload_vpn_file" and is_admin:
+                markup = {
+                    "inline_keyboard": [
+                        [{"text": "🛡️ Upload NordVPN", "callback_data": "up_vpn_nord", "style": "primary"}],
+                        [{"text": "🛡️ Upload ProtonVPN", "callback_data": "up_vpn_proton", "style": "primary"}]
+                    ]
+                }
+                send_message(chat_id, "কোন ভিপিএন-এর স্টক ফাইল আপলোড করবেন সিলেক্ট করুন:", reply_markup=markup)
+
+            elif data.startswith("up_vpn_") and is_admin:
+                service = "nord" if "nord" in data else "proton"
+                set_user_state(user_id, {"step": "ADMIN_UPLOAD_VPN_FILE", "service": service})
+                send_message(chat_id, f"📁 <b>{service.capitalize()}VPN সম্বলিত ফাইলটি (.txt / .csv) পাঠান:</b>\nফরম্যাট:\n<code>email:password</code>", reply_markup=get_back_keyboard())
 
             elif data == "admin_set_exchange" and is_admin:
                 set_user_state(user_id, "ADMIN_SET_EXCHANGE")
@@ -1171,15 +1418,24 @@ def handle_update(update):
 
             elif data == "admin_view_stock" and is_admin:
                 stock_items = get_all_stock()
-                if not stock_items:
-                    send_message(chat_id, "📊 <b>বর্তমানে স্টকে কোনো নম্বর খালি নেই!</b>")
-                else:
-                    stock_text = f"📊 <b>বর্তমান স্টকে থাকা নম্বরসমূহ (মোট: {len(stock_items)} টি):</b>\n\n"
-                    for item in stock_items[:30]:
+                nord_count = get_vpn_stock_count("nord")
+                proton_count = get_vpn_stock_count("proton")
+                
+                stock_text = (
+                    f"📊 <b>বর্তমান স্টক ওভারভিউ:</b>\n\n"
+                    f"📱 <b>WhatsApp Number Stock:</b> {len(stock_items)} টি\n"
+                    f"🛡️ <b>NordVPN Stock:</b> {nord_count} টি\n"
+                    f"🛡️ <b>ProtonVPN Stock:</b> {proton_count} টি\n\n"
+                )
+                
+                if stock_items:
+                    stock_text += "<b>WhatsApp নম্বরসমূহ:</b>\n"
+                    for item in stock_items[:20]:
                         stock_text += f"📱 <code>{item[1]}</code>\n🔗 {item[2]}\n\n"
-                    if len(stock_items) > 30:
-                        stock_text += f"<i>...এবং আরও {len(stock_items) - 30} টি নম্বর রয়েছে।</i>"
-                    send_message(chat_id, stock_text)
+                    if len(stock_items) > 20:
+                        stock_text += f"<i>...এবং আরও {len(stock_items) - 20} টি নম্বর রয়েছে।</i>"
+                
+                send_message(chat_id, stock_text)
 
             elif data == "admin_delete_stock_confirm" and is_admin:
                 markup = {"inline_keyboard": [[{"text": "✅ Yes, Delete All", "callback_data": "admin_delete_stock_execute", "style": "danger"}]]}
@@ -1215,6 +1471,7 @@ def safe_execution_wrapper(upd):
         handle_update(upd)
     except Exception as e:
         print(f"Exception Handled Safety: {e}")
+
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()

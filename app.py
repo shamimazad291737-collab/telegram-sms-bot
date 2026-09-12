@@ -1,4 +1,4 @@
-import os
+Import os
 import requests
 import html
 import threading
@@ -497,7 +497,7 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল পূর্ণসংখ্যা লিখুন (যেমন: 2, 5, 10)।")
                     return
 
-            # Requirement #3: Search User by Username
+           # Requirement #3: Search User by Username
             if is_admin and isinstance(state_data, str) and state_data == "ADMIN_SEARCH_USER":
                 u_info = get_user_by_username(text)
                 if not u_info:
@@ -955,7 +955,7 @@ def handle_update(update):
             }
             edit_message(chat_id, message_id, "<b>👥 USER MANAGEMENT OPTIONS:</b>\nএকটি অপশন বেছে নিন:", reply_markup=markup)
 
-        # Requirement #3: Option 1 - All User View Inline
+        # Requirement #3: Option 1 - All User View Inline (64-byte payload limit fix)
         elif data == "admin_view_users" and is_admin:
             users_list = get_all_users_info()
             if not users_list:
@@ -966,13 +966,13 @@ def handle_update(update):
             for u in users_list:
                 u_id, u_name, u_bal = u[0], u[1], u[2]
                 display_title = f"👤 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"👤 ID: {u_id} (${u_bal:.2f})"
-                buttons.append([{"text": display_title, "callback_data": f"inspect_u_{u_id}", "style": "primary"}])
+                buttons.append([{"text": display_title, "callback_data": f"insp_u_{u_id}", "style": "primary"}])
 
             buttons.append([{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}])
             markup = {"inline_keyboard": buttons}
             edit_message(chat_id, message_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
 
-        # Requirement #3: Option 2 - Active Buyers List Inline
+        # Requirement #3: Option 2 - Active Buyers List Inline (64-byte payload limit fix)
         elif data == "admin_view_buyers" and is_admin:
             buyers_list = get_buyers_list()
             if not buyers_list:
@@ -983,7 +983,7 @@ def handle_update(update):
             for u in buyers_list:
                 u_id, u_name, u_bal = u[0], u[1], u[2]
                 display_title = f"🛒 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"🛒 ID: {u_id} (${u_bal:.2f})"
-                buttons.append([{"text": display_title, "callback_data": f"inspect_buyer_{u_id}", "style": "success"}])
+                buttons.append([{"text": display_title, "callback_data": f"insp_b_{u_id}", "style": "success"}])
 
             buttons.append([{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}])
             markup = {"inline_keyboard": buttons}
@@ -1015,9 +1015,10 @@ def handle_update(update):
             set_user_state(user_id, "ADMIN_SEARCH_USER")
             send_message(chat_id, "🔎 <b>ইউজারের Username টি লিখে পাঠান:</b>\n(যেমন: `@username` বা `username`)", reply_markup=get_back_keyboard())
 
-        # Inspect Active Buyer Details (Fixed Bug & Added Stats Calculation)
-        elif data.startswith("inspect_buyer_") and is_admin:
-            target_u_id = int(data.replace("inspect_buyer_", ""))
+        # Inspect Active Buyer Details (Supports Shortened and Legacy Callback Data)
+        elif (data.startswith("insp_b_") or data.startswith("inspect_buyer_")) and is_admin:
+            target_u_id_str = data.replace("insp_b_", "").replace("inspect_buyer_", "")
+            target_u_id = int(target_u_id_str)
             u_info = get_user(target_u_id)
             
             if not u_info:
@@ -1067,9 +1068,10 @@ def handle_update(update):
             }
             edit_message(chat_id, message_id, buyer_msg, reply_markup=markup)
 
-        # Admin Inspect Specific User (Requirements 3 & 5 Sync)
-        elif data.startswith("inspect_u_") and is_admin:
-            target_u_id = int(data.replace("inspect_u_", ""))
+        # Admin Inspect Specific User (Supports Shortened and Legacy Callback Data)
+        elif (data.startswith("insp_u_") or data.startswith("inspect_u_")) and is_admin:
+            target_u_id_str = data.replace("insp_u_", "").replace("inspect_u_", "")
+            target_u_id = int(target_u_id_str)
             u_info = get_user(target_u_id)
             
             if not u_info:

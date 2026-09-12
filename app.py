@@ -507,68 +507,6 @@ def render_buyer_page(target_u_id, page=1, items_per_page=10):
 
     return buyer_msg, {"inline_keyboard": nav_buttons}
 
-# Helper Generator for Buyer Details with Pagination System
-def render_buyer_page(target_u_id, page=1, items_per_page=10):
-    u_info = get_user(target_u_id)
-    if not u_info:
-        return "❌ <b>ইউজার পাওয়া যায়নি!</b>", {"inline_keyboard": []}
-
-    orders = get_user_orders_all(target_u_id)
-    total_purchased = len(orders)
-    otp_sent_count = sum(1 for o in orders if o[1])
-    failed_count = total_purchased - otp_sent_count
-    success_rate = (otp_sent_count / total_purchased * 100) if total_purchased > 0 else 0.0
-
-    total_pages = (total_purchased + items_per_page - 1) // items_per_page
-    if total_pages == 0:
-        total_pages = 1
-    if page < 1:
-        page = 1
-    if page > total_pages:
-        page = total_pages
-
-    buyer_msg = (
-        f"🛒 <b>BUYER DETAILED HISTORY</b>\n\n"
-        f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
-        f"👤 <b>Username:</b> @{u_info[1]}\n"
-        f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
-        f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n\n"
-        f"📈 <b>BUYER STATS:</b>\n"
-        f"🔹 Total Bought: <b>{total_purchased}</b>\n"
-        f"✅ OTP Sent (Success): <b>{otp_sent_count}</b>\n"
-        f"❌ OTP Failed: <b>{failed_count}</b>\n"
-        f"🎯 Success Rate: <b>{success_rate:.1f}%</b>\n\n"
-        f"<b>📋 ক্রয়ের হিস্ট্রি ও OTP স্ট্যাটাস (Page {page}/{total_pages}):</b>\n\n"
-    )
-
-    if not orders:
-        buyer_msg += "<i>কোনো নম্বরের তথ্য পাওয়া যায়নি।</i>\n"
-    else:
-        start_idx = (page - 1) * items_per_page
-        end_idx = start_idx + items_per_page
-        page_orders = orders[start_idx:end_idx]
-
-        for idx, ord_item in enumerate(page_orders, start=start_idx + 1):
-            p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
-            status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
-            buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
-
-    # Pagination Nav Buttons
-    nav_buttons = []
-    if total_pages > 1:
-        row = []
-        if page > 1:
-            row.append({"text": f"◀️ Page {page-1}", "callback_data": f"pb_{target_u_id}_{page-1}", "style": "primary"})
-        row.append({"text": f"📄 {page}/{total_pages}", "callback_data": "noop"})
-        if page < total_pages:
-            row.append({"text": f"Page {page+1} ▶️", "callback_data": f"pb_{target_u_id}_{page+1}", "style": "primary"})
-        nav_buttons.append(row)
-
-    nav_buttons.append([{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}])
-    nav_buttons.append([{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers", "style": "primary"}])
-
-    return buyer_msg, {"inline_keyboard": nav_buttons}
-
 # Helper Generator for User Details Page Pagination
 def render_user_page(target_u_id, page=1, items_per_page=10):
     u_info = get_user(target_u_id)
@@ -760,7 +698,8 @@ def handle_update(update):
                         bal = u_info[2] if u_info else 0.0
                         total_cost = current_price * qty
 
-                        if bal < total_cost:
+                        # Fixed Floating-Point Balance Check Issue
+                        if round(bal, 2) < round(total_cost, 2):
                             send_message(chat_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\n{qty} টি নম্বর কিনতে ${total_cost:.2f} USD লাগবে। আপনার ব্যালেন্স: ${bal:.2f} USD।")
                             delete_user_state(user_id)
                             return
@@ -799,7 +738,7 @@ def handle_update(update):
                         send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল পূর্ণসংখ্যা লিখুন (যেমন: 2, 5, 10)।")
                         return
 
-                # Search User by Username
+               # Search User by Username
                 if is_admin and isinstance(state_data, str) and state_data == "ADMIN_SEARCH_USER":
                     u_info = get_user_by_username(text)
                     if not u_info:
@@ -810,17 +749,6 @@ def handle_update(update):
                     target_u_id = u_info[0]
                     buyer_msg, buyer_markup = render_buyer_page(target_u_id, page=1)
                     send_message(chat_id, buyer_msg, reply_markup=buyer_markup)
-                    delete_user_state(user_id)
-                    return
-
-                # Change Exchange Rate
-                if is_admin and state_data == "ADMIN_SET_EXCHANGE":
-                    try:
-                        new_rate = float(text)
-                        set_bdt_per_usd(new_rate)
-                        send_message(chat_id, f"✅ <b>ডলার এক্সচেঞ্জ রেট সফলভাবে পরিবর্তন করা হয়েছে!</b>\nবর্তমান রেট: 1 USD = ৳{new_rate:.2f} BDT", reply_markup=get_main_keyboard(is_admin))
-                    except ValueError:
-                        send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> সঠিক সংখ্যা লিখুন (যেমন: 120.0)।")
                     delete_user_state(user_id)
                     return
 
@@ -1020,6 +948,7 @@ def handle_update(update):
                     delete_user_state(user_id)
                     return
 
+         
             # Main Keyboards Handling
             if text == "/start":
                 welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
@@ -1041,7 +970,7 @@ def handle_update(update):
                 markup = {
                     "inline_keyboard": [
                         [{"text": f"🛡️ NordVPN (${nord_pr:.2f})", "callback_data": "buy_vpn_nord", "style": "primary"}],
-                        [{"text": "🛡️ ProtonVPN (${:.2f})".format(proton_pr), "callback_data": "buy_vpn_proton", "style": "primary"}]
+                        [{"text": f"🛡️ ProtonVPN (${proton_pr:.2f})", "callback_data": "buy_vpn_proton", "style": "primary"}]
                     ]
                 }
                 send_message(chat_id, "🛡️ <b>Select VPN Service:</b>\n\nপছন্দের VPN সার্ভিস বেছে নিন:", reply_markup=get_back_keyboard())
@@ -1106,14 +1035,35 @@ def handle_update(update):
             if data == "noop":
                 return
 
-            # VPN Buy Callbacks
+            # VPN Buy Callbacks with Confirm & Cancel Support
             if data.startswith("buy_vpn_"):
                 service = "nord" if "nord" in data else "proton"
                 pr = get_vpn_price(service)
                 u_info = get_user(user_id)
                 bal = u_info[2] if u_info else 0.0
 
-                if bal < pr:
+                if round(bal, 2) < round(pr, 2):
+                    edit_message(chat_id, message_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\n{service.capitalize()}VPN কিনতে ${pr:.2f} USD লাগবে। আপনার ব্যালেন্স: ${bal:.2f} USD।")
+                    return
+
+                conf_markup = {
+                    "inline_keyboard": [
+                        [
+                            {"text": "✅ Confirm Order", "callback_data": f"conf_vpn_{service}", "style": "success"},
+                            {"text": "❌ Cancel", "callback_data": "cancel_vpn", "style": "danger"}
+                        ]
+                    ]
+                }
+                edit_message(chat_id, message_id, f"🛡️ <b>{service.capitalize()}VPN Order Confirmation</b>\n\n💰 Price: <b>${pr:.2f} USD</b>\n💵 Your Balance: <b>${bal:.2f} USD</b>\n\nআপনি কি এই ভিপিএনটি কিনতে চান?", reply_markup=conf_markup)
+                return
+
+            elif data.startswith("conf_vpn_"):
+                service = "nord" if "nord" in data else "proton"
+                pr = get_vpn_price(service)
+                u_info = get_user(user_id)
+                bal = u_info[2] if u_info else 0.0
+
+                if round(bal, 2) < round(pr, 2):
                     edit_message(chat_id, message_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\n{service.capitalize()}VPN কিনতে ${pr:.2f} USD লাগবে। আপনার ব্যালেন্স: ${bal:.2f} USD।")
                     return
 
@@ -1126,11 +1076,15 @@ def handle_update(update):
                     f"👤 <b>User ID:</b> <code>{user_id}</code>\n"
                     f"🛡️ <b>Service:</b> {service.upper()}VPN\n"
                     f"💰 <b>Price:</b> ${pr:.2f} USD\n\n"
-                    f"👉 <i>এই মেসেজটিতে Reply দিয়ে ইমেইল ও পাসওয়ার্ড লিখে দিন (যেমন: email:password)।</i>"
+                    f"👉 <i>এই মেসেজটিতে Reply দিয়ে ইমেইল ও পাসওয়ার্ড লিখে দিন (যেমন: email:password)。</i>"
                 )
                 send_message(ADMIN_ID, admin_notif)
 
-                edit_message(chat_id, message_id, f"✅ <b>আপনার {service.capitalize()}VPN অর্ডারটি গ্রহণ করা হয়েছে!</b>\n\n💰 ফি কাটা হয়েছে: ${pr:.2f} USD\n⏳ অল্প কিছুক্ষণের মধ্যে এডমিন আপনার ভিপিএন এর ইমেইল এবং পাসওয়ার্ড পাঠিয়ে দেবে।")
+                edit_message(chat_id, message_id, f"✅ <b>আপনার {service.capitalize()}VPN অর্ডারটি সফলভাবে কনফার্ম হয়েছে!</b>\n\n💰 ফি কাটা হয়েছে: ${pr:.2f} USD\n⏳ অল্প কিছুক্ষণের মধ্যে এডমিন আপনার ভিপিএন এর ইমেইল এবং পাসওয়ার্ড পাঠিয়ে দেবে।")
+                return
+
+            elif data == "cancel_vpn":
+                edit_message(chat_id, message_id, "❌ <b>ভিপিএন অর্ডারটি বাতিল করা হয়েছে।</b>")
                 return
 
             # Bot Status Toggle Callback
@@ -1159,7 +1113,8 @@ def handle_update(update):
                 u_info = get_user(user_id)
                 bal = u_info[2] if u_info else 0.0
 
-                if bal < current_price:
+                # Fixed Floating-Point Balance Check Issue
+                if round(bal, 2) < round(current_price, 2):
                     edit_message(chat_id, message_id, f"❌ <b>পর্যাপ্ত ব্যালেন্স নেই!</b>\nনম্বর কিনতে অন্তত ${current_price:.2f} USD ব্যালেন্স লাগবে। Deposit সেকশন থেকে রিচার্জ করুন।")
                     return
 

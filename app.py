@@ -349,7 +349,6 @@ def get_back_keyboard():
     kb = [[{"text": "⬅️ Back", "style": "danger"}]]
     return {"keyboard": kb, "resize_keyboard": True}
 
-# Helper for Admin Panel Main Text & Markup (Requirement 2 Edit Message Sync)
 def get_admin_panel_data():
     bot_active = (get_bot_status() == "ON")
     current_price = get_number_price()
@@ -385,7 +384,6 @@ def get_admin_panel_data():
 
 # Core Update Handler
 def handle_update(update):
-    # Block Group Execution (Only Private Chat Allowed)
     msg_data = update.get("message") or update.get("callback_query", {}).get("message")
     if msg_data:
         chat_type = msg_data.get("chat", {}).get("type", "")
@@ -406,18 +404,15 @@ def handle_update(update):
         bdt_rate = get_bdt_per_usd()
         bot_active = (get_bot_status() == "ON")
 
-        # Handle Back Button Globally
         if text in ["⬅️ Back", "🔙 Back"]:
             delete_user_state(user_id)
             send_message(chat_id, "<b>মূল মেনুতে ফিরে আসা হয়েছে:</b>", reply_markup=get_main_keyboard(is_admin))
             return
 
-        # Check Bot OFF Status for Normal Users
         if not is_admin and not bot_active:
             send_message(chat_id, "⚠️ <b>সাময়িক সময়ের জন্য বট আপডেট করা হচ্ছে!</b>\nআপনারা একটু ধৈর্য ধরুন, এরপর জানিয়ে দেওয়া হবে। আপাতত কেউ ডিপোজিট বা নম্বর ক্রয় করবেন না। 🛑")
             return
 
-        # Force Join Verification Guard for Normal Users
         if not is_admin:
             is_joined, missing = verify_force_join(user_id)
             if not is_joined:
@@ -442,10 +437,8 @@ def handle_update(update):
                 )
                 return
 
-        # Input State Handling from Database
         state_data = get_user_state(user_id)
         if state_data:
-            # Requirement #4: Multiple Number Quantity Input
             if isinstance(state_data, str) and state_data == "BUY_MULTI_QTY":
                 try:
                     qty = int(text)
@@ -484,9 +477,8 @@ def handle_update(update):
                     
                     res_msg += f"\n💰 <b>মোট ফি কাটা হয়েছে:</b> ${current_price * len(purchased_list):.2f} USD\n👉 যেকোনো একটির ওটিপি পেতে <b>Check OTP</b> বাটনে চাপ দিন।"
                     
-                    # Generates Inline Buttons for Multi-Check
                     multi_btns = []
-                    for p, l in purchased_list[:10]: # Max 10 buttons per view to avoid TG clutter
+                    for p, l in purchased_list[:10]:
                         multi_btns.append([{"text": f"🔄 Check OTP ({p})", "callback_data": f"chk_otp_{p}", "style": "primary"}])
                     
                     send_message(chat_id, res_msg, reply_markup={"inline_keyboard": multi_btns})
@@ -497,7 +489,6 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল পূর্ণসংখ্যা লিখুন (যেমন: 2, 5, 10)।")
                     return
 
-           # Requirement #3: Search User by Username
             if is_admin and isinstance(state_data, str) and state_data == "ADMIN_SEARCH_USER":
                 u_info = get_user_by_username(text)
                 if not u_info:
@@ -517,16 +508,16 @@ def handle_update(update):
                     f"🛒 <b>Total Purchased Numbers:</b> {len(orders)} টি\n"
                 )
 
+                # Fixed: Short Callback Data to avoid 64-byte payload limit issue
                 markup = {
                     "inline_keyboard": [
-                        [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}]
+                        [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"rf_{target_u_id}", "style": "success"}]
                     ]
                 }
                 send_message(chat_id, search_res, reply_markup=markup)
                 delete_user_state(user_id)
                 return
 
-            # Change Exchange Rate
             if is_admin and state_data == "ADMIN_SET_EXCHANGE":
                 try:
                     new_rate = float(text)
@@ -537,7 +528,6 @@ def handle_update(update):
                 delete_user_state(user_id)
                 return
 
-            # Change Number Price
             if is_admin and state_data == "ADMIN_SET_PRICE":
                 try:
                     new_pr = float(text)
@@ -548,7 +538,6 @@ def handle_update(update):
                 delete_user_state(user_id)
                 return
 
-            # Dynamic Force Join Set (Strict 2 Channels Option)
             if is_admin and state_data == "ADMIN_SET_CHANNELS":
                 ch_list = [c.strip() for c in text.split(",") if c.strip()]
                 if len(ch_list) > 2:
@@ -559,7 +548,6 @@ def handle_update(update):
                 delete_user_state(user_id)
                 return
 
-            # Deposit Step 1: Amount
             if isinstance(state_data, dict) and state_data.get("step") == "WAITING_AMOUNT":
                 method = state_data["method"]
                 try:
@@ -598,7 +586,6 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল সংখ্যা লিখুন। (যেমন: 120 বা 5)")
                     return
 
-            # Deposit Step 2: TrxID
             elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_TRX":
                 set_user_state(user_id, {
                     "step": "WAITING_SCREENSHOT",
@@ -609,7 +596,6 @@ def handle_update(update):
                 send_message(chat_id, "📸 <b>ধন্যবাদ! এবার পেমেন্টের একটি স্পষ্ট স্ক্রিনশট (Photo) পাঠান:</b>", reply_markup=get_back_keyboard())
                 return
 
-            # Deposit Step 3: Screenshot
             elif isinstance(state_data, dict) and state_data.get("step") == "WAITING_SCREENSHOT":
                 if "photo" in msg:
                     photo_file_id = msg["photo"][-1]["file_id"]
@@ -651,7 +637,6 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>অনুগ্রহ করে পেমেন্টের একটি ছবি/স্ক্রিনশট পাঠান।</b>", reply_markup=get_back_keyboard())
                     return
 
-            # Admin File Upload
             elif is_admin and state_data == "ADMIN_UPLOAD_FILE":
                 if "document" in msg:
                     doc = msg["document"]
@@ -682,7 +667,6 @@ def handle_update(update):
                     send_message(chat_id, "❌ <b>অনুগ্রহ করে একটি সঠিক টেক্সট (.txt / .csv) ফাইল আপলোড করুন।</b>", reply_markup=get_back_keyboard())
                     return
 
-            # Admin Custom Deposit Input
             elif isinstance(state_data, str) and state_data.startswith("ADMIN_APPROVE_AMOUNT_"):
                 target_user = int(state_data.replace("ADMIN_APPROVE_AMOUNT_", ""))
                 try:
@@ -695,7 +679,6 @@ def handle_update(update):
                 delete_user_state(user_id)
                 return
 
-            # Admin Refund Input (Updated with Num Count & Username tracking)
             elif isinstance(state_data, str) and state_data.startswith("ADMIN_REFUND_USER_"):
                 target_user = int(state_data.replace("ADMIN_REFUND_USER_", ""))
                 try:
@@ -715,7 +698,6 @@ def handle_update(update):
                 delete_user_state(user_id)
                 return
 
-            # Admin Broadcast
             elif isinstance(state_data, str) and state_data == "ADMIN_BROADCAST":
                 all_users = get_all_users()
                 success, failed = 0, 0
@@ -733,12 +715,10 @@ def handle_update(update):
                 delete_user_state(user_id)
                 return
 
-        # Main Keyboards Handling
         if text == "/start":
             welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
             send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
 
-        # Requirement #4: Single vs Multiple Number Purchase Buttons
         elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
             markup = {
                 "inline_keyboard": [
@@ -761,7 +741,6 @@ def handle_update(update):
             send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
             send_message(chat_id, "পেমেন্ট গেটওয়ে:", reply_markup=markup)
 
-        # Requirement 1 Updated: Profile Section Total Purchased Numbers Added
         elif text == "👤 PROFILE":
             u_info = get_user(user_id)
             bal = u_info[2] if u_info else 0.0
@@ -779,7 +758,6 @@ def handle_update(update):
         elif text == "🎧 SUPPORT":
             send_message(chat_id, f"<b>যেকোনো সাহায্যে যোগাযোগ করুন:</b>\n👉 @{SUPPORT_USERNAME}", reply_markup=get_back_keyboard())
 
-        # Requirement #3 & Requirement 2: Admin Panel Menu Entry
         elif text == "⚙️ ADMIN PANEL" and is_admin:
             admin_msg, admin_markup = get_admin_panel_data()
             send_message(chat_id, admin_msg, reply_markup=get_back_keyboard())
@@ -800,7 +778,6 @@ def handle_update(update):
         except Exception:
             pass
 
-        # Check Bot OFF Status for Callbacks (Non-Admin)
         if not is_admin and not bot_active and data != "verify_join":
             send_message(chat_id, "⚠️ <b>সাময়িক সময়ের জন্য বট বন্ধ রয়েছে!</b>\nএডমিন বট চালু করলে সেবা গ্রহণ করতে পারবেন।")
             return
@@ -808,7 +785,6 @@ def handle_update(update):
         current_price = get_number_price()
         bdt_rate = get_bdt_per_usd()
 
-        # Bot Status Toggle Callback
         if data == "admin_toggle_bot_off" and is_admin:
             set_bot_status("OFF")
             admin_msg, admin_markup = get_admin_panel_data()
@@ -826,7 +802,6 @@ def handle_update(update):
             else:
                 send_message(chat_id, "❌ <b>আপনি এখনও সবগুলো চ্যানেলে জয়েন করেননি!</b>\nদয়া করে ২টি চ্যানেলেই জয়েন করে আবার ট্রাই করুন।")
 
-        # Requirement #4: Multiple Number Trigger Callback
         elif data == "buy_multi_num":
             set_user_state(user_id, "BUY_MULTI_QTY")
             send_message(chat_id, "🔢 <b>আপনি কতগুলো নম্বর কিনতে চান লিখে পাঠান:</b>\n(যেমন: 2, 5, 10 ইত্যাদি)", reply_markup=get_back_keyboard())
@@ -864,7 +839,6 @@ def handle_update(update):
             send_message(chat_id, res_text, reply_markup=markup)
             send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-        # Requirements #1, #2, #3, #5: Header, App Identification, Language Scraping & DB Sync
         elif data.startswith("chk_otp_"):
             phone = data.replace("chk_otp_", "")
             order = get_order_by_phone(phone)
@@ -903,12 +877,9 @@ def handle_update(update):
                     print(f"OTP Scraping Error: {e}")
 
                 if otp_code:
-                    # App Detection Logic
                     app_type = "WB" if ("business" in raw_response_text.lower() or "smb" in raw_response_text.lower()) else "WA"
-                    # Language Detection Logic
                     detected_lang = detect_language(raw_response_text)
 
-                    # DB Auto Sync Status Update
                     update_order_otp(phone, otp_code, app_type=app_type, lang=detected_lang)
                     
                     markup = {
@@ -917,7 +888,6 @@ def handle_update(update):
                         ]
                     }
                     
-                    # Requirement 5 Format: Shortcode in Brackets e.g. [ZH]
                     otp_msg = (
                         f"<b>Your WhatsApp Code ({app_type})</b>\n\n"
                         f"🔑 <b>OTP:</b> <code>{otp_code}</code>\n"
@@ -930,19 +900,17 @@ def handle_update(update):
                         group_msg = (
                             f"🎉 <b>New OTP Received! ({app_type})</b>\n\n"
                             f"📱 <b>Number:</b> <code>{masked_num}</code>\n"
-                            f"🔑 <b>OTP Code:</b> <code>{otp_code}</code>\n"
+                            f"🔑 <b>OTP Code:</b> <code>{masked_num}</code>\n"
                             f"🌐 <b>Language:</b> <code>[{detected_lang}]</code>"
                         )
                         send_message(OTP_GROUP_ID, group_msg)
                 else:
                     send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
 
-        # Requirement #2: Inline Admin Panel Navigation with edit_message
         elif data == "admin_panel_back" and is_admin:
             admin_msg, admin_markup = get_admin_panel_data()
             edit_message(chat_id, message_id, admin_msg, reply_markup=admin_markup)
 
-        # Requirement #3: Sub-menu for User Management Inline (Updated with Refund History)
         elif data == "admin_user_mgmt_menu" and is_admin:
             markup = {
                 "inline_keyboard": [
@@ -955,7 +923,7 @@ def handle_update(update):
             }
             edit_message(chat_id, message_id, "<b>👥 USER MANAGEMENT OPTIONS:</b>\nএকটি অপশন বেছে নিন:", reply_markup=markup)
 
-        # Requirement #3: Option 1 - All User View Inline (64-byte payload limit fix)
+        # OPTIMIZED CALLBACK DATA KEYS TO AVOID TELEGRAM 64-BYTE LIMIT
         elif data == "admin_view_users" and is_admin:
             users_list = get_all_users_info()
             if not users_list:
@@ -966,13 +934,13 @@ def handle_update(update):
             for u in users_list:
                 u_id, u_name, u_bal = u[0], u[1], u[2]
                 display_title = f"👤 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"👤 ID: {u_id} (${u_bal:.2f})"
-                buttons.append([{"text": display_title, "callback_data": f"insp_u_{u_id}", "style": "primary"}])
+                # Fixed callback data to 'iu_' to prevent string overflow
+                buttons.append([{"text": display_title, "callback_data": f"iu_{u_id}", "style": "primary"}])
 
             buttons.append([{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}])
             markup = {"inline_keyboard": buttons}
             edit_message(chat_id, message_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
 
-        # Requirement #3: Option 2 - Active Buyers List Inline (64-byte payload limit fix)
         elif data == "admin_view_buyers" and is_admin:
             buyers_list = get_buyers_list()
             if not buyers_list:
@@ -983,13 +951,13 @@ def handle_update(update):
             for u in buyers_list:
                 u_id, u_name, u_bal = u[0], u[1], u[2]
                 display_title = f"🛒 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"🛒 ID: {u_id} (${u_bal:.2f})"
-                buttons.append([{"text": display_title, "callback_data": f"insp_b_{u_id}", "style": "success"}])
+                # Fixed callback data to 'ib_' to prevent string overflow
+                buttons.append([{"text": display_title, "callback_data": f"ib_{u_id}", "style": "success"}])
 
             buttons.append([{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}])
             markup = {"inline_keyboard": buttons}
             edit_message(chat_id, message_id, f"🛒 <b>নম্বর ক্রয়কারী ইউজারদের তালিকা (মোট: {len(buyers_list)} জন):</b>\nকার কোন নম্বরে ওটিপি এসেছে তা দেখতে ক্লিক করুন:", reply_markup=markup)
 
-        # Refund History List Section
         elif data == "admin_refund_history" and is_admin:
             logs = list(refund_logs_col.find().sort("_id", -1).limit(30))
             if not logs:
@@ -1010,14 +978,13 @@ def handle_update(update):
             markup = {"inline_keyboard": [[{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}]]}
             edit_message(chat_id, message_id, history_msg, reply_markup=markup)
 
-        # Requirement #3: Option 3 - Search User Button Action
         elif data == "admin_search_user_btn" and is_admin:
             set_user_state(user_id, "ADMIN_SEARCH_USER")
             send_message(chat_id, "🔎 <b>ইউজারের Username টি লিখে পাঠান:</b>\n(যেমন: `@username` বা `username`)", reply_markup=get_back_keyboard())
 
-        # Inspect Active Buyer Details (Supports Shortened and Legacy Callback Data)
-        elif (data.startswith("insp_b_") or data.startswith("inspect_buyer_")) and is_admin:
-            target_u_id_str = data.replace("insp_b_", "").replace("inspect_buyer_", "")
+        # Support backward compatibility and short limits for Callback Query Trigger
+        elif (data.startswith("ib_") or data.startswith("insp_b_") or data.startswith("inspect_buyer_")) and is_admin:
+            target_u_id_str = data.replace("ib_", "").replace("insp_b_", "").replace("inspect_buyer_", "")
             target_u_id = int(target_u_id_str)
             u_info = get_user(target_u_id)
             
@@ -1028,7 +995,7 @@ def handle_update(update):
             orders = get_user_orders_all(target_u_id)
             
             total_purchased = len(orders)
-            otp_sent_count = sum(1 for o in orders if o[1]) # Orders with OTP
+            otp_sent_count = sum(1 for o in orders if o[1])
             failed_count = total_purchased - otp_sent_count
             success_rate = (otp_sent_count / total_purchased * 100) if total_purchased > 0 else 0.0
 
@@ -1049,28 +1016,27 @@ def handle_update(update):
             if not orders:
                 buyer_msg += "<i>কোনো নম্বরের তথ্য পাওয়া যায়নি।</i>\n"
             else:
-                for idx, ord_item in enumerate(orders[:25], 1): # Showing last 25 orders to prevent Telegram payload limit
+                for idx, ord_item in enumerate(orders[:25], 1):
                     p_num = ord_item[0]
                     otp_c = ord_item[1]
                     p_date = ord_item[2]
                     otp_l = ord_item[3]
-                    app_t = ord_item[4]
-                    lang_t = ord_item[5]
+                    app_t = ord_item[4] if len(ord_item) > 4 else "WA"
+                    lang_t = ord_item[5] if len(ord_item) > 5 else "EN"
 
                     status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
                     buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}],
+                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"rf_{target_u_id}", "style": "success"}],
                     [{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers", "style": "primary"}]
                 ]
             }
             edit_message(chat_id, message_id, buyer_msg, reply_markup=markup)
 
-        # Admin Inspect Specific User (Supports Shortened and Legacy Callback Data)
-        elif (data.startswith("insp_u_") or data.startswith("inspect_u_")) and is_admin:
-            target_u_id_str = data.replace("insp_u_", "").replace("inspect_u_", "")
+        elif (data.startswith("iu_") or data.startswith("insp_u_") or data.startswith("inspect_u_")) and is_admin:
+            target_u_id_str = data.replace("iu_", "").replace("insp_u_", "").replace("inspect_u_", "")
             target_u_id = int(target_u_id_str)
             u_info = get_user(target_u_id)
             
@@ -1093,19 +1059,24 @@ def handle_update(update):
                 user_msg += "<i>এই ইউজার গত ২৪ ঘণ্টায় কোনো নম্বর কেনেনি।</i>\n"
             else:
                 for idx, ord_item in enumerate(orders, 1):
-                    p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
+                    p_num = ord_item[0]
+                    otp_c = ord_item[1]
+                    p_date = ord_item[2]
+                    otp_l = ord_item[3]
+                    app_t = ord_item[4] if len(ord_item) > 4 else "WA"
+                    lang_t = ord_item[5] if len(ord_item) > 5 else "EN"
+                    
                     status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
                     user_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
 
             markup = {
                 "inline_keyboard": [
-                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}],
+                    [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"rf_{target_u_id}", "style": "success"}],
                     [{"text": "⬅️ Back to User List", "callback_data": "admin_view_users", "style": "primary"}]
                 ]
             }
             edit_message(chat_id, message_id, user_msg, reply_markup=markup)
 
-        # Admin Controls Callback Setup
         elif data == "admin_set_exchange" and is_admin:
             set_user_state(user_id, "ADMIN_SET_EXCHANGE")
             send_message(chat_id, f"💱 <b>নতুন BDT to USD রেট লিখে পাঠান:</b>\n(যেমন: 120, 122, 125 ইত্যাদি। বর্তমান রেট: ৳{int(bdt_rate)})", reply_markup=get_back_keyboard())
@@ -1114,8 +1085,9 @@ def handle_update(update):
             set_user_state(user_id, "ADMIN_SET_CHANNELS")
             send_message(chat_id, "📢 <b>ফোর্স জয়েন চ্যানেল ২ টি লিঙ্ক বা ইউজারনেম দিন:</b>\n(সর্বোচ্চ ২টি, কমা দিয়ে দিন। যেমন: `@channel1, @channel2` অথবা `https://t.me/link1, https://t.me/link2`)", reply_markup=get_back_keyboard())
 
-        elif data.startswith("admin_ref_input_") and is_admin:
-            target_u_id = int(data.replace("admin_ref_input_", ""))
+        elif (data.startswith("rf_") or data.startswith("admin_ref_input_")) and is_admin:
+            target_u_id_str = data.replace("rf_", "").replace("admin_ref_input_", "")
+            target_u_id = int(target_u_id_str)
             u = get_user(target_u_id)
             target_uname = u[1] if u else "User"
             set_user_state(user_id, f"ADMIN_REFUND_USER_{target_u_id}")

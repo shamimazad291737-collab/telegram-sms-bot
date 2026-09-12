@@ -58,7 +58,7 @@ stock_col = db["stock"]
 orders_col = db["active_orders"]
 settings_col = db["settings"]
 user_states_col = db["user_states"] # Database state collection to fix state loss issue
-refund_logs_col = db["refund_logs"] # New collection for Refund History
+refund_logs_col = db["refund_logs"] # Collection for Refund History
 
 # Helper functions for MongoDB User States
 def get_user_state(user_id):
@@ -128,7 +128,6 @@ def get_all_users_info():
     users = list(users_col.find())
     return [(u["user_id"], u.get("username", "NoUsername"), u.get("balance", 0.0)) for u in users]
 
-# Fixed Broadcast Users Retrieval Logic
 def get_all_users():
     users = list(users_col.find({}, {"user_id": 1}))
     return [u["user_id"] for u in users if "user_id" in u]
@@ -176,7 +175,6 @@ def add_refund_balance(user_id, amount_usd, num_count=0):
         {"user_id": user_id},
         {"$inc": {"balance": amount_usd}}
     )
-    # Record in Refund Logs
     u = get_user(user_id)
     username = u[1] if u else "NoUsername"
     now_str = datetime.now().strftime("%d-%b-%Y %I:%M %p")
@@ -350,7 +348,7 @@ def get_back_keyboard():
     kb = [[{"text": "⬅️ Back", "style": "danger"}]]
     return {"keyboard": kb, "resize_keyboard": True}
 
-# Helper for Admin Panel Main Text & Markup (Requirement 2 Edit Message Sync)
+# Helper for Admin Panel Main Text & Markup
 def get_admin_panel_data():
     bot_active = (get_bot_status() == "ON")
     current_price = get_number_price()
@@ -383,6 +381,123 @@ def get_admin_panel_data():
         ]
     }
     return msg, markup
+
+# Helper Generator for Buyer Details with Pagination System
+def render_buyer_page(target_u_id, page=1, items_per_page=10):
+    u_info = get_user(target_u_id)
+    if not u_info:
+        return "❌ <b>ইউজার পাওয়া যায়নি!</b>", {"inline_keyboard": []}
+
+    orders = get_user_orders_all(target_u_id)
+    total_purchased = len(orders)
+    otp_sent_count = sum(1 for o in orders if o[1])
+    failed_count = total_purchased - otp_sent_count
+    success_rate = (otp_sent_count / total_purchased * 100) if total_purchased > 0 else 0.0
+
+    total_pages = (total_purchased + items_per_page - 1) // items_per_page
+    if total_pages == 0:
+        total_pages = 1
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+
+    buyer_msg = (
+        f"🛒 <b>BUYER DETAILED HISTORY</b>\n\n"
+        f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
+        f"👤 <b>Username:</b> @{u_info[1]}\n"
+        f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
+        f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n\n"
+        f"📈 <b>BUYER STATS:</b>\n"
+        f"🔹 Total Bought: <b>{total_purchased}</b>\n"
+        f"✅ OTP Sent (Success): <b>{otp_sent_count}</b>\n"
+        f"❌ OTP Failed: <b>{failed_count}</b>\n"
+        f"🎯 Success Rate: <b>{success_rate:.1f}%</b>\n\n"
+        f"<b>📋 ক্রয়ের হিস্ট্রি ও OTP স্ট্যাটাস (Page {page}/{total_pages}):</b>\n\n"
+    )
+
+    if not orders:
+        buyer_msg += "<i>কোনো নম্বরের তথ্য পাওয়া যায়নি।</i>\n"
+    else:
+        start_idx = (page - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        page_orders = orders[start_idx:end_idx]
+
+        for idx, ord_item in enumerate(page_orders, start=start_idx + 1):
+            p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
+            status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
+            buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
+
+    # Pagination Nav Buttons
+    nav_buttons = []
+    if total_pages > 1:
+        row = []
+        if page > 1:
+            row.append({"text": f"◀️ Page {page-1}", "callback_data": f"pb_{target_u_id}_{page-1}", "style": "primary"})
+        row.append({"text": f"📄 {page}/{total_pages}", "callback_data": "noop"})
+        if page < total_pages:
+            row.append({"text": f"Page {page+1} ▶️", "callback_data": f"pb_{target_u_id}_{page+1}", "style": "primary"})
+        nav_buttons.append(row)
+
+    nav_buttons.append([{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}])
+    nav_buttons.append([{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers", "style": "primary"}])
+
+    return buyer_msg, {"inline_keyboard": nav_buttons}
+
+# Helper Generator for User Details Page Pagination
+def render_user_page(target_u_id, page=1, items_per_page=10):
+    u_info = get_user(target_u_id)
+    if not u_info:
+        return "❌ <b>ইউজার পাওয়া যায়নি!</b>", {"inline_keyboard": []}
+
+    orders = get_user_orders_24h(target_u_id)
+    total_purchased = len(orders)
+
+    total_pages = (total_purchased + items_per_page - 1) // items_per_page
+    if total_pages == 0:
+        total_pages = 1
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+
+    user_msg = (
+        f"👤 <b>USER DETAILS & HISTORY (LAST 24 HOURS)</b>\n\n"
+        f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
+        f"👤 <b>Username:</b> @{u_info[1]}\n"
+        f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
+        f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
+        f"🛒 <b>Purchased Numbers (Last 24h):</b> {total_purchased} টি\n\n"
+        f"<b>📋 গত ২৪ ঘণ্টার ক্রয়ের হিস্ট্রি (Page {page}/{total_pages}):</b>\n\n"
+    )
+
+    if not orders:
+        user_msg += "<i>এই ইউজার গত ২৪ ঘণ্টায় কোনো নম্বর কেনেনি।</i>\n"
+    else:
+        start_idx = (page - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        page_orders = orders[start_idx:end_idx]
+
+        for idx, ord_item in enumerate(page_orders, start=start_idx + 1):
+            p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
+            status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
+            user_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
+
+    # Pagination Nav Buttons
+    nav_buttons = []
+    if total_pages > 1:
+        row = []
+        if page > 1:
+            row.append({"text": f"◀️ Page {page-1}", "callback_data": f"pu_{target_u_id}_{page-1}", "style": "primary"})
+        row.append({"text": f"📄 {page}/{total_pages}", "callback_data": "noop"})
+        if page < total_pages:
+            row.append({"text": f"Page {page+1} ▶️", "callback_data": f"pu_{target_u_id}_{page+1}", "style": "primary"})
+        nav_buttons.append(row)
+
+    nav_buttons.append([{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}])
+    nav_buttons.append([{"text": "⬅️ Back to User List", "callback_data": "admin_view_users", "style": "primary"}])
+
+    return user_msg, {"inline_keyboard": nav_buttons}
 
 # Core Update Handler
 def handle_update(update):
@@ -447,7 +562,7 @@ def handle_update(update):
             # Input State Handling from Database
             state_data = get_user_state(user_id)
             if state_data:
-                # Requirement #4: Multiple Number Quantity Input
+                # Multiple Number Quantity Input
                 if isinstance(state_data, str) and state_data == "BUY_MULTI_QTY":
                     try:
                         qty = int(text)
@@ -486,9 +601,8 @@ def handle_update(update):
                         
                         res_msg += f"\n💰 <b>মোট ফি কাটা হয়েছে:</b> ${current_price * len(purchased_list):.2f} USD\n👉 যেকোনো একটির ওটিপি পেতে <b>Check OTP</b> বাটনে চাপ দিন।"
                         
-                        # Generates Inline Buttons for Multi-Check
                         multi_btns = []
-                        for p, l in purchased_list[:10]: # Max 10 buttons per view to avoid TG clutter
+                        for p, l in purchased_list[:10]:
                             multi_btns.append([{"text": f"🔄 Check OTP ({p})", "callback_data": f"chk_otp_{p}", "style": "primary"}])
                         
                         send_message(chat_id, res_msg, reply_markup={"inline_keyboard": multi_btns})
@@ -499,7 +613,7 @@ def handle_update(update):
                         send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> কেবল পূর্ণসংখ্যা লিখুন (যেমন: 2, 5, 10)।")
                         return
 
-               # Requirement #3: Search User by Username
+                # Search User by Username
                 if is_admin and isinstance(state_data, str) and state_data == "ADMIN_SEARCH_USER":
                     u_info = get_user_by_username(text)
                     if not u_info:
@@ -508,23 +622,8 @@ def handle_update(update):
                         return
 
                     target_u_id = u_info[0]
-                    orders = get_user_orders_all(target_u_id)
-                    
-                    search_res = (
-                        f"🔎 <b>USER SEARCH RESULT</b>\n\n"
-                        f"👤 <b>Username:</b> @{u_info[1]}\n"
-                        f"🆔 <b>User ID:</b> <code>{target_u_id}</code>\n"
-                        f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
-                        f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
-                        f"🛒 <b>Total Purchased Numbers:</b> {len(orders)} টি\n"
-                    )
-
-                    markup = {
-                        "inline_keyboard": [
-                            [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}]
-                        ]
-                    }
-                    send_message(chat_id, search_res, reply_markup=markup)
+                    buyer_msg, buyer_markup = render_buyer_page(target_u_id, page=1)
+                    send_message(chat_id, buyer_msg, reply_markup=buyer_markup)
                     delete_user_state(user_id)
                     return
 
@@ -550,7 +649,7 @@ def handle_update(update):
                     delete_user_state(user_id)
                     return
 
-                # Dynamic Force Join Set (Strict 2 Channels Option)
+                # Dynamic Force Join Set
                 if is_admin and state_data == "ADMIN_SET_CHANNELS":
                     ch_list = [c.strip() for c in text.split(",") if c.strip()]
                     if len(ch_list) > 2:
@@ -697,7 +796,7 @@ def handle_update(update):
                     delete_user_state(user_id)
                     return
 
-                # Admin Refund Input (Updated with Num Count & Username tracking)
+                # Admin Refund Input
                 elif isinstance(state_data, str) and state_data.startswith("ADMIN_REFUND_USER_"):
                     target_user = int(state_data.replace("ADMIN_REFUND_USER_", ""))
                     try:
@@ -740,7 +839,6 @@ def handle_update(update):
                 welcome_text = f"👋 <b>Welcome {html.escape(first_name)}!</b>\n\nনিচের মেনু থেকে সার্ভিস সিলেক্ট করুন:"
                 send_message(chat_id, welcome_text, reply_markup=get_main_keyboard(is_admin))
 
-            # Requirement #4: Single vs Multiple Number Purchase Buttons
             elif text in ["🛒 BUY NUMBER", "📱 GET NUMBER"]:
                 markup = {
                     "inline_keyboard": [
@@ -763,7 +861,6 @@ def handle_update(update):
                 send_message(chat_id, dep_text, reply_markup=get_back_keyboard())
                 send_message(chat_id, "পেমেন্ট গেটওয়ে:", reply_markup=markup)
 
-            # Requirement 1 Updated: Profile Section Total Purchased Numbers Added
             elif text == "👤 PROFILE":
                 u_info = get_user(user_id)
                 bal = u_info[2] if u_info else 0.0
@@ -781,7 +878,6 @@ def handle_update(update):
             elif text == "🎧 SUPPORT":
                 send_message(chat_id, f"<b>যেকোনো সাহায্যে যোগাযোগ করুন:</b>\n👉 @{SUPPORT_USERNAME}", reply_markup=get_back_keyboard())
 
-            # Requirement #3 & Requirement 2: Admin Panel Menu Entry
             elif text == "⚙️ ADMIN PANEL" and is_admin:
                 admin_msg, admin_markup = get_admin_panel_data()
                 send_message(chat_id, admin_msg, reply_markup=get_back_keyboard())
@@ -797,19 +893,20 @@ def handle_update(update):
             is_admin = (user_id == ADMIN_ID)
             bot_active = (get_bot_status() == "ON")
 
-            # CRITICAL FIX 1: Always answerCallbackQuery immediately to stop telegram loading spin/freeze
             try:
                 requests.post(BASE_URL + "answerCallbackQuery", json={"callback_query_id": cb_id}, timeout=5)
             except Exception:
                 pass
 
-            # Check Bot OFF Status for Callbacks (Non-Admin)
             if not is_admin and not bot_active and data != "verify_join":
                 send_message(chat_id, "⚠️ <b>সাময়িক সময়ের জন্য বট বন্ধ রয়েছে!</b>\nএডমিন বট চালু করলে সেবা গ্রহণ করতে পারবেন।")
                 return
 
             current_price = get_number_price()
             bdt_rate = get_bdt_per_usd()
+
+            if data == "noop":
+                return
 
             # Bot Status Toggle Callback
             if data == "admin_toggle_bot_off" and is_admin:
@@ -829,7 +926,6 @@ def handle_update(update):
                 else:
                     send_message(chat_id, "❌ <b>আপনি এখনও সবগুলো চ্যানেলে জয়েন করেননি!</b>\nদয়া করে ২টি চ্যানেলেই জয়েন করে আবার ট্রাই করুন।")
 
-            # Requirement #4: Multiple Number Trigger Callback
             elif data == "buy_multi_num":
                 set_user_state(user_id, "BUY_MULTI_QTY")
                 send_message(chat_id, "🔢 <b>আপনি কতগুলো নম্বর কিনতে চান লিখে পাঠান:</b>\n(যেমন: 2, 5, 10 ইত্যাদি)", reply_markup=get_back_keyboard())
@@ -867,7 +963,6 @@ def handle_update(update):
                 send_message(chat_id, res_text, reply_markup=markup)
                 send_message(chat_id, "<b>মূল মেনু:</b>", reply_markup=get_main_keyboard(is_admin))
 
-            # Requirements #1, #2, #3, #5: Header, App Identification, Language Scraping & DB Sync
             elif data.startswith("chk_otp_"):
                 phone = data.replace("chk_otp_", "")
                 order = get_order_by_phone(phone)
@@ -906,12 +1001,8 @@ def handle_update(update):
                         print(f"OTP Scraping Error: {e}")
 
                     if otp_code:
-                        # App Detection Logic
                         app_type = "WB" if ("business" in raw_response_text.lower() or "smb" in raw_response_text.lower()) else "WA"
-                        # Language Detection Logic
                         detected_lang = detect_language(raw_response_text)
-
-                        # DB Auto Sync Status Update
                         update_order_otp(phone, otp_code, app_type=app_type, lang=detected_lang)
                         
                         markup = {
@@ -920,7 +1011,6 @@ def handle_update(update):
                             ]
                         }
                         
-                        # Requirement 5 Format: Shortcode in Brackets e.g. [ZH]
                         otp_msg = (
                             f"<b>Your WhatsApp Code ({app_type})</b>\n\n"
                             f"🔑 <b>OTP:</b> <code>{otp_code}</code>\n"
@@ -940,12 +1030,10 @@ def handle_update(update):
                     else:
                         send_message(chat_id, "⌛ <b>OTP এখনও আসেনি!</b> অনুগ্রহ করে কিছুক্ষণ পর আবার Check OTP চাপুন।")
 
-            # Requirement #2: Inline Admin Panel Navigation with edit_message
             elif data == "admin_panel_back" and is_admin:
                 admin_msg, admin_markup = get_admin_panel_data()
                 edit_message(chat_id, message_id, admin_msg, reply_markup=admin_markup)
 
-            # Requirement #3: Sub-menu for User Management Inline (Updated with Refund History)
             elif data == "admin_user_mgmt_menu" and is_admin:
                 markup = {
                     "inline_keyboard": [
@@ -958,7 +1046,6 @@ def handle_update(update):
                 }
                 edit_message(chat_id, message_id, "<b>👥 USER MANAGEMENT OPTIONS:</b>\nএকটি অপশন বেছে নিন:", reply_markup=markup)
 
-            # Requirement #3: Option 1 - All User View Inline (64-byte payload limit fix)
             elif data == "admin_view_users" and is_admin:
                 users_list = get_all_users_info()
                 if not users_list:
@@ -969,13 +1056,12 @@ def handle_update(update):
                 for u in users_list:
                     u_id, u_name, u_bal = u[0], u[1], u[2]
                     display_title = f"👤 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"👤 ID: {u_id} (${u_bal:.2f})"
-                    buttons.append([{"text": display_title, "callback_data": f"insp_u_{u_id}", "style": "primary"}])
+                    buttons.append([{"text": display_title, "callback_data": f"pu_{u_id}_1", "style": "primary"}])
 
                 buttons.append([{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}])
                 markup = {"inline_keyboard": buttons}
                 edit_message(chat_id, message_id, f"👥 <b>বটের সমস্ত ইউজারের তালিকা (মোট: {len(users_list)} জন):</b>\nইউজারের ডিটেইলস দেখতে তার নামের ওপর ক্লিক করুন:", reply_markup=markup)
 
-            # Requirement #3: Option 2 - Active Buyers List Inline (64-byte payload limit fix)
             elif data == "admin_view_buyers" and is_admin:
                 buyers_list = get_buyers_list()
                 if not buyers_list:
@@ -986,13 +1072,12 @@ def handle_update(update):
                 for u in buyers_list:
                     u_id, u_name, u_bal = u[0], u[1], u[2]
                     display_title = f"🛒 @{u_name} (${u_bal:.2f})" if u_name != "NoUsername" else f"🛒 ID: {u_id} (${u_bal:.2f})"
-                    buttons.append([{"text": display_title, "callback_data": f"insp_b_{u_id}", "style": "success"}])
+                    buttons.append([{"text": display_title, "callback_data": f"pb_{u_id}_1", "style": "success"}])
 
                 buttons.append([{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}])
                 markup = {"inline_keyboard": buttons}
                 edit_message(chat_id, message_id, f"🛒 <b>নম্বর ক্রয়কারী ইউজারদের তালিকা (মোট: {len(buyers_list)} জন):</b>\nকার কোন নম্বরে ওটিপি এসেছে তা দেখতে ক্লিক করুন:", reply_markup=markup)
 
-            # Refund History List Section
             elif data == "admin_refund_history" and is_admin:
                 logs = list(refund_logs_col.find().sort("_id", -1).limit(30))
                 if not logs:
@@ -1013,109 +1098,38 @@ def handle_update(update):
                 markup = {"inline_keyboard": [[{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}]]}
                 edit_message(chat_id, message_id, history_msg, reply_markup=markup)
 
-            # Requirement #3: Option 3 - Search User Button Action
             elif data == "admin_search_user_btn" and is_admin:
                 set_user_state(user_id, "ADMIN_SEARCH_USER")
                 send_message(chat_id, "🔎 <b>ইউজারের Username টি লিখে পাঠান:</b>\n(যেমন: `@username` বা `username`)", reply_markup=get_back_keyboard())
 
-            # Inspect Active Buyer Details (CRITICAL FIX 2: Added safety checks & payload truncation to prevent Telegram message crash)
-            elif (data.startswith("insp_b_") or data.startswith("inspect_buyer_")) and is_admin:
-                target_u_id_str = data.replace("insp_b_", "").replace("inspect_buyer_", "")
-                target_u_id = int(target_u_id_str)
-                u_info = get_user(target_u_id)
-                
-                if not u_info:
-                    edit_message(chat_id, message_id, "❌ <b>ইউজার পাওয়া যায়নি!</b>")
-                    return
-
-                orders = get_user_orders_all(target_u_id)
-                
-                total_purchased = len(orders)
-                otp_sent_count = sum(1 for o in orders if o[1]) # Orders with OTP
-                failed_count = total_purchased - otp_sent_count
-                success_rate = (otp_sent_count / total_purchased * 100) if total_purchased > 0 else 0.0
-
-                buyer_msg = (
-                    f"🛒 <b>BUYER DETAILED HISTORY</b>\n\n"
-                    f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
-                    f"👤 <b>Username:</b> @{u_info[1]}\n"
-                    f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
-                    f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n\n"
-                    f"📈 <b>BUYER STATS:</b>\n"
-                    f"🔹 Total Bought: <b>{total_purchased}</b>\n"
-                    f"✅ OTP Sent (Success): <b>{otp_sent_count}</b>\n"
-                    f"❌ OTP Failed: <b>{failed_count}</b>\n"
-                    f"🎯 Success Rate: <b>{success_rate:.1f}%</b>\n\n"
-                    f"<b>📋 ক্রয়ের হিস্ট্রি ও OTP স্ট্যাটাস:</b>\n"
-                )
-
-                if not orders:
-                    buyer_msg += "<i>কোনো নম্বরের তথ্য পাওয়া যায়নি।</i>\n"
+            # PAGINATION CALLBACK FOR ACTIVE BUYERS PAGE NAVIGATION (pb_USERID_PAGE / insp_b_)
+            elif (data.startswith("pb_") or data.startswith("insp_b_") or data.startswith("inspect_buyer_")) and is_admin:
+                clean_data = data.replace("insp_b_", "").replace("inspect_buyer_", "")
+                if clean_data.startswith("pb_"):
+                    parts = clean_data.split("_")
+                    target_u_id = int(parts[1])
+                    page_num = int(parts[2])
                 else:
-                    # Showing max 15 to fit within Telegram message size limits strictly
-                    for idx, ord_item in enumerate(orders[:15], 1): 
-                        p_num = ord_item[0]
-                        otp_c = ord_item[1]
-                        p_date = ord_item[2]
-                        otp_l = ord_item[3]
-                        app_t = ord_item[4]
-                        lang_t = ord_item[5]
+                    target_u_id = int(clean_data)
+                    page_num = 1
 
-                        status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
-                        buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
-                    
-                    if len(orders) > 15:
-                        buyer_msg += f"<i>...এবং আরও {len(orders) - 15} টি নম্বরের রেকর্ড রয়েছে।</i>"
+                buyer_msg, buyer_markup = render_buyer_page(target_u_id, page=page_num)
+                edit_message(chat_id, message_id, buyer_msg, reply_markup=buyer_markup)
 
-                markup = {
-                    "inline_keyboard": [
-                        [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}],
-                        [{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers", "style": "primary"}]
-                    ]
-                }
-                edit_message(chat_id, message_id, buyer_msg, reply_markup=markup)
-
-            # Admin Inspect Specific User (CRITICAL FIX 3: Safety Checks & Safe Message Boundaries)
-            elif (data.startswith("insp_u_") or data.startswith("inspect_u_")) and is_admin:
-                target_u_id_str = data.replace("insp_u_", "").replace("inspect_u_", "")
-                target_u_id = int(target_u_id_str)
-                u_info = get_user(target_u_id)
-                
-                if not u_info:
-                    edit_message(chat_id, message_id, "❌ <b>ইউজার পাওয়া যায়নি!</b>")
-                    return
-
-                orders = get_user_orders_24h(target_u_id)
-                user_msg = (
-                    f"👤 <b>USER DETAILS & HISTORY (LAST 24 HOURS)</b>\n\n"
-                    f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
-                    f"👤 <b>Username:</b> @{u_info[1]}\n"
-                    f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
-                    f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
-                    f"🛒 <b>Purchased Numbers (Last 24h):</b> {len(orders)} টি\n\n"
-                    f"<b>📋 গত ২৪ ঘণ্টার ক্রয়ের হিস্ট্রি, লিংক ও OTP স্ট্যাটাস:</b>\n"
-                )
-
-                if not orders:
-                    user_msg += "<i>এই ইউজার গত ২৪ ঘণ্টায় কোনো নম্বর কেনেনি।</i>\n"
+            # PAGINATION CALLBACK FOR USER DETAILS PAGE NAVIGATION (pu_USERID_PAGE / insp_u_)
+            elif (data.startswith("pu_") or data.startswith("insp_u_") or data.startswith("inspect_u_")) and is_admin:
+                clean_data = data.replace("insp_u_", "").replace("inspect_u_", "")
+                if clean_data.startswith("pu_"):
+                    parts = clean_data.split("_")
+                    target_u_id = int(parts[1])
+                    page_num = int(parts[2])
                 else:
-                    for idx, ord_item in enumerate(orders[:15], 1):
-                        p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
-                        status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
-                        user_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
+                    target_u_id = int(clean_data)
+                    page_num = 1
 
-                    if len(orders) > 15:
-                        user_msg += f"<i>...এবং আরও {len(orders) - 15} টি রেকর্ড রয়েছে।</i>"
+                user_msg, user_markup = render_user_page(target_u_id, page=page_num)
+                edit_message(chat_id, message_id, user_msg, reply_markup=user_markup)
 
-                markup = {
-                    "inline_keyboard": [
-                        [{"text": f"➕ Add / Refund Balance to @{u_info[1]}", "callback_data": f"admin_ref_input_{target_u_id}", "style": "success"}],
-                        [{"text": "⬅️ Back to User List", "callback_data": "admin_view_users", "style": "primary"}]
-                    ]
-                }
-                edit_message(chat_id, message_id, user_msg, reply_markup=markup)
-
-            # Admin Controls Callback Setup
             elif data == "admin_set_exchange" and is_admin:
                 set_user_state(user_id, "ADMIN_SET_EXCHANGE")
                 send_message(chat_id, f"💱 <b>নতুন BDT to USD রেট লিখে পাঠান:</b>\n(যেমন: 120, 122, 125 ইত্যাদি। বর্তমান রেট: ৳{int(bdt_rate)})", reply_markup=get_back_keyboard())

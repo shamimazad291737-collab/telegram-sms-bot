@@ -58,6 +58,7 @@ stock_col = db["stock"]
 orders_col = db["active_orders"]
 settings_col = db["settings"]
 user_states_col = db["user_states"] # Database state collection to fix state loss issue
+refund_logs_col = db["refund_logs"] # New collection for Refund History
 
 # Helper functions for MongoDB User States
 def get_user_state(user_id):
@@ -170,11 +171,23 @@ def update_balance(user_id, amount_usd):
         {"$inc": {"balance": amount_usd, "total_recharge": amount_usd}}
     )
 
-def add_refund_balance(user_id, amount_usd):
+def add_refund_balance(user_id, amount_usd, num_count=0):
     users_col.update_one(
         {"user_id": user_id},
         {"$inc": {"balance": amount_usd}}
     )
+    # Record in Refund Logs
+    u = get_user(user_id)
+    username = u[1] if u else "NoUsername"
+    now_str = datetime.now().strftime("%d-%b-%Y %I:%M %p")
+    refund_logs_col.insert_one({
+        "user_id": user_id,
+        "username": username,
+        "amount": amount_usd,
+        "num_count": num_count,
+        "date": now_str,
+        "timestamp": datetime.now()
+    })
 
 def deduct_balance(user_id, amount_usd):
     users_col.update_one(
@@ -217,8 +230,8 @@ def get_user_orders_all(user_id):
         all_orders.append((
             row["phone_number"], 
             row.get("otp_code"), 
-            row["purchase_date"], 
-            row["otp_link"], 
+            row.get("purchase_date", "N/A"), 
+            row.get("otp_link", ""), 
             row.get("app_type", "WA"), 
             row.get("lang", "EN")
         ))
@@ -230,13 +243,13 @@ def get_user_orders_24h(user_id):
     now = datetime.now()
     for row in rows:
         try:
-            p_date = datetime.strptime(row["purchase_date"], "%d-%b-%Y %I:%M %p")
+            p_date = datetime.strptime(row.get("purchase_date", ""), "%d-%b-%Y %I:%M %p")
             if now - p_date <= timedelta(hours=24):
                 recent_orders.append((
                     row["phone_number"], 
                     row.get("otp_code"), 
-                    row["purchase_date"], 
-                    row["otp_link"],
+                    row.get("purchase_date", "N/A"), 
+                    row.get("otp_link", ""),
                     row.get("app_type", "WA"),
                     row.get("lang", "EN")
                 ))
@@ -244,8 +257,8 @@ def get_user_orders_24h(user_id):
             recent_orders.append((
                 row["phone_number"], 
                 row.get("otp_code"), 
-                row["purchase_date"], 
-                row["otp_link"],
+                row.get("purchase_date", "N/A"), 
+                row.get("otp_link", ""),
                 row.get("app_type", "WA"),
                 row.get("lang", "EN")
             ))
@@ -682,16 +695,23 @@ def handle_update(update):
                 delete_user_state(user_id)
                 return
 
-            # Admin Refund Input
+            # Admin Refund Input (Updated with Num Count & Username tracking)
             elif isinstance(state_data, str) and state_data.startswith("ADMIN_REFUND_USER_"):
                 target_user = int(state_data.replace("ADMIN_REFUND_USER_", ""))
                 try:
-                    usd_val = float(text)
-                    add_refund_balance(target_user, usd_val)
-                    send_message(chat_id, f"✅ <b>User ID {target_user}-কে ${usd_val:.2f} USD রিফান্ড/ব্যালেন্স যোগ করে দেওয়া হয়েছে।</b>", reply_markup=get_main_keyboard(is_admin))
-                    send_message(target_user, f"🎉 <b>এডমিন আপনার অ্যাকাউন্টে ${usd_val:.2f} USD রিফান্ড/ব্যালেন্স যোগ করেছেন!</b>")
+                    parts = text.split()
+                    usd_val = float(parts[0])
+                    num_cnt = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+                    
+                    target_info = get_user(target_user)
+                    target_name = target_info[1] if target_info else "NoUsername"
+                    
+                    add_refund_balance(target_user, usd_val, num_count=num_cnt)
+                    
+                    send_message(chat_id, f"✅ <b>User @{target_name} (ID: {target_user})-কে ${usd_val:.2f} USD সফলভাবে রিফান্ড করা হয়েছে!</b>\n(রিফান্ড হিস্ট্রিতে রেকর্ডটি সেভ হয়েছে)", reply_markup=get_main_keyboard(is_admin))
+                    send_message(target_user, f"🎉 <b>এডমিন আপনার অ্যাকাউন্টে ${usd_val:.2f} USD রিফান্ড যোগ করেছেন!</b>")
                 except Exception:
-                    send_message(chat_id, "❌ <b>ভুল অ্যামাউন্ট!</b> কেবল ডলারে সংখ্যা লিখুন। (যেমন: 0.10 বা 1.50)")
+                    send_message(chat_id, "❌ <b>ভুল ইনপুট!</b> অ্যামাউন্ট লিখুন অথবা অ্যামাউন্ট ও নম্বরের সংখ্যা লিখুন। (যেমন: 0.10 বা 0.50 5)")
                 delete_user_state(user_id)
                 return
 
@@ -922,12 +942,13 @@ def handle_update(update):
             admin_msg, admin_markup = get_admin_panel_data()
             edit_message(chat_id, message_id, admin_msg, reply_markup=admin_markup)
 
-        # Requirement #3: Sub-menu for User Management Inline
+        # Requirement #3: Sub-menu for User Management Inline (Updated with Refund History)
         elif data == "admin_user_mgmt_menu" and is_admin:
             markup = {
                 "inline_keyboard": [
                     [{"text": "👥 All User View", "callback_data": "admin_view_users", "style": "primary"}],
                     [{"text": "🛒 Active Buyers List", "callback_data": "admin_view_buyers", "style": "success"}],
+                    [{"text": "📜 Refund History Log", "callback_data": "admin_refund_history", "style": "primary"}],
                     [{"text": "🔎 Search User & Refund", "callback_data": "admin_search_user_btn", "style": "primary"}],
                     [{"text": "⬅️ Back to Admin Panel", "callback_data": "admin_panel_back", "style": "danger"}]
                 ]
@@ -968,12 +989,33 @@ def handle_update(update):
             markup = {"inline_keyboard": buttons}
             edit_message(chat_id, message_id, f"🛒 <b>নম্বর ক্রয়কারী ইউজারদের তালিকা (মোট: {len(buyers_list)} জন):</b>\nকার কোন নম্বরে ওটিপি এসেছে তা দেখতে ক্লিক করুন:", reply_markup=markup)
 
+        # Refund History List Section
+        elif data == "admin_refund_history" and is_admin:
+            logs = list(refund_logs_col.find().sort("_id", -1).limit(30))
+            if not logs:
+                edit_message(chat_id, message_id, "📜 <b>এখনও কাউকে রিফান্ড করা হয়নি।</b>", reply_markup={"inline_keyboard": [[{"text": "⬅️ Back", "callback_data": "admin_user_mgmt_menu"}]]})
+                return
+
+            history_msg = f"📜 <b>REFUND HISTORY LOG (LAST {len(logs)} RECORDS)</b>\n\n"
+            for idx, log in enumerate(logs, 1):
+                u_name = log.get("username", "NoUsername")
+                u_id = log.get("user_id")
+                amt = log.get("amount", 0.0)
+                n_cnt = log.get("num_count", 0)
+                dt = log.get("date", "N/A")
+                
+                num_str = f" ({n_cnt} Numbers)" if n_cnt > 0 else ""
+                history_msg += f"<b>{idx}.</b> 👤 <b>User:</b> @{u_name} (<code>{u_id}</code>)\n   💵 <b>Refund:</b> ${amt:.2f} USD{num_str}\n   📅 <b>Date:</b> {dt}\n\n"
+
+            markup = {"inline_keyboard": [[{"text": "⬅️ Back to User Management", "callback_data": "admin_user_mgmt_menu", "style": "danger"}]]}
+            edit_message(chat_id, message_id, history_msg, reply_markup=markup)
+
         # Requirement #3: Option 3 - Search User Button Action
         elif data == "admin_search_user_btn" and is_admin:
             set_user_state(user_id, "ADMIN_SEARCH_USER")
             send_message(chat_id, "🔎 <b>ইউজারের Username টি লিখে পাঠান:</b>\n(যেমন: `@username` বা `username`)", reply_markup=get_back_keyboard())
 
-       # Inspect Active Buyer Details (Requirements 3 & 5: Auto Received Status, Link and Brackets Sync)
+        # Inspect Active Buyer Details (Fixed Bug & Added Stats Calculation)
         elif data.startswith("inspect_buyer_") and is_admin:
             target_u_id = int(data.replace("inspect_buyer_", ""))
             u_info = get_user(target_u_id)
@@ -983,20 +1025,39 @@ def handle_update(update):
                 return
 
             orders = get_user_orders_all(target_u_id)
+            
+            total_purchased = len(orders)
+            otp_sent_count = sum(1 for o in orders if o[1]) # Orders with OTP
+            failed_count = total_purchased - otp_sent_count
+            success_rate = (otp_sent_count / total_purchased * 100) if total_purchased > 0 else 0.0
+
             buyer_msg = (
                 f"🛒 <b>BUYER DETAILED HISTORY</b>\n\n"
                 f"🆔 <b>User ID:</b> <code>{u_info[0]}</code>\n"
                 f"👤 <b>Username:</b> @{u_info[1]}\n"
                 f"💰 <b>Current Balance:</b> ${u_info[2]:.2f} USD\n"
-                f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n"
-                f"🛒 <b>Total Purchased Numbers:</b> {len(orders)} টি\n\n"
+                f"📊 <b>Total Recharge:</b> ${u_info[3]:.2f} USD\n\n"
+                f"📈 <b>BUYER STATS:</b>\n"
+                f"🔹 Total Bought: <b>{total_purchased}</b>\n"
+                f"✅ OTP Sent (Success): <b>{otp_sent_count}</b>\n"
+                f"❌ OTP Failed: <b>{failed_count}</b>\n"
+                f"🎯 Success Rate: <b>{success_rate:.1f}%</b>\n\n"
                 f"<b>📋 ক্রয়ের হিস্ট্রি ও OTP স্ট্যাটাস:</b>\n"
             )
 
-            for idx, ord_item in enumerate(orders, 1):
-                p_num, otp_c, p_date, otp_l, app_t, lang_t = ord_item[0], ord_item[1], ord_item[2], ord_item[3], ord_item[4], ord_item[5]
-                status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
-                buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
+            if not orders:
+                buyer_msg += "<i>কোনো নম্বরের তথ্য পাওয়া যায়নি।</i>\n"
+            else:
+                for idx, ord_item in enumerate(orders[:25], 1): # Showing last 25 orders to prevent Telegram payload limit
+                    p_num = ord_item[0]
+                    otp_c = ord_item[1]
+                    p_date = ord_item[2]
+                    otp_l = ord_item[3]
+                    app_t = ord_item[4]
+                    lang_t = ord_item[5]
+
+                    status = f"✅ Received ({otp_c}) [{app_t}]" if otp_c else "❌ OTP Pending / Not Received"
+                    buyer_msg += f"<b>{idx}.</b> 📱 <code>{p_num}</code>\n   📅 Date: {p_date}\n   🔗 Link: {otp_l}\n   📌 Status: {status}\n   🌐 Lang: [{lang_t}]\n\n"
 
             markup = {
                 "inline_keyboard": [
@@ -1053,8 +1114,10 @@ def handle_update(update):
 
         elif data.startswith("admin_ref_input_") and is_admin:
             target_u_id = int(data.replace("admin_ref_input_", ""))
+            u = get_user(target_u_id)
+            target_uname = u[1] if u else "User"
             set_user_state(user_id, f"ADMIN_REFUND_USER_{target_u_id}")
-            send_message(chat_id, f"➕ <b>User ID {target_u_id}-এর অ্যাকাউন্টে কত $ (USD) রিফান্ড/যোগ করতে চান লিখে পাঠান:</b>\n(যেমন: 0.10, 0.20 বা 1.00)", reply_markup=get_back_keyboard())
+            send_message(chat_id, f"➕ <b>User @{target_uname} (ID: {target_u_id})-এর অ্যাকাউন্টে কত $ (USD) রিফান্ড করতে চান লিখে পাঠান:</b>\n\n<i>নোট: আপনি চাইলে রিফান্ড অ্যামাউন্টের সাথে স্পেস দিয়ে নম্বরের সংখ্যাও লিখতে পারেন (যেমন: <code>0.30 3</code> বা শুধু <code>0.30</code>)</i>", reply_markup=get_back_keyboard())
 
         elif data == "dep_bkash":
             set_user_state(user_id, {"step": "WAITING_AMOUNT", "method": "BKASH"})

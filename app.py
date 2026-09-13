@@ -104,6 +104,10 @@ def init_settings():
         settings_col.insert_one({"key": "force_channels", "channels": []})
     if not settings_col.find_one({"key": "bot_status"}):
         settings_col.insert_one({"key": "bot_status", "value": "ON"})
+    if not settings_col.find_one({"key": "rex_checker_link"}):
+        settings_col.insert_one({"key": "rex_checker_link", "value": "https://t.me/rex_checker_bot"})
+    if not settings_col.find_one({"key": "google_sheet_url"}):
+        settings_col.insert_one({"key": "google_sheet_url", "value": ""})
 
 init_settings()
 
@@ -125,6 +129,36 @@ def get_bot_status():
 
 def set_bot_status(status):
     settings_col.update_one({"key": "bot_status"}, {"$set": {"value": status}}, upsert=True)
+
+def get_rex_checker_link():
+    doc = settings_col.find_one({"key": "rex_checker_link"})
+    return doc["value"] if doc else "https://t.me/rex_checker_bot"
+
+def set_rex_checker_link(link):
+    settings_col.update_one({"key": "rex_checker_link"}, {"$set": {"value": link}}, upsert=True)
+
+def get_google_sheet_url():
+    doc = settings_col.find_one({"key": "google_sheet_url"})
+    return doc["value"] if doc else ""
+
+def set_google_sheet_url(url):
+    settings_col.update_one({"key": "google_sheet_url"}, {"$set": {"value": url}}, upsert=True)
+
+def log_purchase_to_google_sheet(user_id, username, phone, otp_link, purchase_date):
+    sheet_url = get_google_sheet_url()
+    if not sheet_url:
+        return
+    try:
+        payload = {
+            "user_id": str(user_id),
+            "username": str(username),
+            "phone": str(phone),
+            "otp_link": str(otp_link),
+            "date": str(purchase_date)
+        }
+        requests.post(sheet_url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Google Sheet Logging Error: {e}")
 
 def get_number_price():
     doc = settings_col.find_one({"key": "number_price"})
@@ -385,6 +419,7 @@ def verify_force_join(user_id):
 
 # Keyboards
 def get_main_keyboard(is_admin=False):
+    rex_link = get_rex_checker_link()
     kb = [
         [
             {"text": "🛒 BUY NUMBER", "style": "success"},
@@ -395,6 +430,7 @@ def get_main_keyboard(is_admin=False):
             {"text": "👤 PROFILE", "style": "primary"}
         ],
         [
+            {"text": "🔍 Rex Checker", "url": rex_link},
             {"text": "🎧 SUPPORT", "style": "primary"}
         ]
     ]
@@ -415,6 +451,8 @@ def get_admin_panel_data():
     bdt_rate = get_bdt_per_usd()
     chans = get_force_channels()
     chan_str = ", ".join(chans) if chans else "None"
+    rex_link = get_rex_checker_link()
+    sheet_url = get_google_sheet_url() or "Not Set"
     status_str = "🟢 ONLINE" if bot_active else "🔴 OFF / MAINTENANCE"
     
     msg = (
@@ -423,6 +461,8 @@ def get_admin_panel_data():
         f"💰 <b>WhatsApp Price:</b> ${current_price:.2f} USD\n"
         f"🛡️ <b>NordVPN Price:</b> ${nord_pr:.2f} USD | <b>ProtonVPN Price:</b> ${proton_pr:.2f} USD\n"
         f"💱 <b>Exchange Rate:</b> 1 USD = ৳{int(bdt_rate)} BDT\n"
+        f"🔍 <b>Rex Checker Link:</b> {rex_link}\n"
+        f"📊 <b>Google Sheet Webhook URL:</b> {sheet_url}\n"
         f"📢 <b>Force Channels (Max 2):</b> {chan_str}"
     )
     
@@ -434,6 +474,8 @@ def get_admin_panel_data():
             [{"text": "👥 USER MANAGEMENT", "callback_data": "admin_user_mgmt_menu", "style": "success"}],
             [{"text": "🏷️ Change WhatsApp Price", "callback_data": "admin_set_rate", "style": "primary"}],
             [{"text": "🛡️ Set NordVPN Price", "callback_data": "admin_set_nord_price", "style": "primary"}, {"text": "🛡️ Set ProtonVPN Price", "callback_data": "admin_set_proton_price", "style": "primary"}],
+            [{"text": "🔍 Set Rex Checker Link", "callback_data": "admin_set_rex_link", "style": "primary"}],
+            [{"text": "📊 Set Google Sheet URL", "callback_data": "admin_set_sheet_url", "style": "success"}],
             [{"text": "📁 Upload VPN Stock File", "callback_data": "admin_upload_vpn_file", "style": "success"}],
             [{"text": "💱 Change Exchange Rate", "callback_data": "admin_set_exchange", "style": "primary"}],
             [{"text": "📢 Dynamic Force Join (2 Channels)", "callback_data": "admin_set_channels", "style": "success"}],
@@ -506,6 +548,7 @@ def render_buyer_page(target_u_id, page=1, items_per_page=10):
     nav_buttons.append([{"text": "⬅️ Back to Buyers List", "callback_data": "admin_view_buyers", "style": "primary"}])
 
     return buyer_msg, {"inline_keyboard": nav_buttons}
+
 
 # Helper Generator for User Details Page Pagination
 def render_user_page(target_u_id, page=1, items_per_page=10):
@@ -644,6 +687,20 @@ def handle_update(update):
             # Input State Handling from Database
             state_data = get_user_state(user_id)
             if state_data:
+                # Set Rex Checker Link
+                if is_admin and state_data == "ADMIN_SET_REX_LINK":
+                    set_rex_checker_link(text.strip())
+                    send_message(chat_id, f"✅ <b>Rex Checker Link updated successfully:</b>\n{text.strip()}", reply_markup=get_main_keyboard(is_admin))
+                    delete_user_state(user_id)
+                    return
+
+                # Set Google Sheet URL
+                if is_admin and state_data == "ADMIN_SET_SHEET_URL":
+                    set_google_sheet_url(text.strip())
+                    send_message(chat_id, f"✅ <b>Google Sheet Webhook URL updated successfully:</b>\n{text.strip()}", reply_markup=get_main_keyboard(is_admin))
+                    delete_user_state(user_id)
+                    return
+
                 # Set VPN Prices
                 if is_admin and state_data in ["ADMIN_SET_NORD_PRICE", "ADMIN_SET_PROTON_PRICE"]:
                     service = "nord" if state_data == "ADMIN_SET_NORD_PRICE" else "proton"
@@ -716,6 +773,10 @@ def handle_update(update):
                             if phone:
                                 deduct_balance(user_id, current_price)
                                 save_active_order(user_id, phone, link)
+                                # Log to Google Sheet with link & date
+                                latest_order = orders_col.find_one({"phone_number": phone}, sort=[("_id", -1)])
+                                p_date = latest_order.get("purchase_date", "") if latest_order else datetime.now().strftime("%d-%b-%Y %I:%M %p")
+                                log_purchase_to_google_sheet(user_id, username, phone, link, p_date)
                                 purchased_list.append((phone, link))
 
                         delete_user_state(user_id)
@@ -1125,6 +1186,11 @@ def handle_update(update):
 
                 deduct_balance(user_id, current_price)
                 save_active_order(user_id, phone, link)
+                
+                # Log to Google Sheet with link & date
+                latest_order = orders_col.find_one({"phone_number": phone}, sort=[("_id", -1)])
+                p_date = latest_order.get("purchase_date", "") if latest_order else datetime.now().strftime("%d-%b-%Y %I:%M %p")
+                log_purchase_to_google_sheet(user_id, username, phone, link, p_date)
 
                 markup = {
                     "inline_keyboard": [
@@ -1309,6 +1375,14 @@ def handle_update(update):
 
                 user_msg, user_markup = render_user_page(target_u_id, page=page_num)
                 edit_message(chat_id, message_id, user_msg, reply_markup=user_markup)
+
+            elif data == "admin_set_rex_link" and is_admin:
+                set_user_state(user_id, "ADMIN_SET_REX_LINK")
+                send_message(chat_id, "🔍 <b>Rex Checker-এর নতুন লিংকটি (URL / Bot Link) লিখে পাঠান:</b>", reply_markup=get_back_keyboard())
+
+            elif data == "admin_set_sheet_url" and is_admin:
+                set_user_state(user_id, "ADMIN_SET_SHEET_URL")
+                send_message(chat_id, "📊 <b>Google Sheet Webhook / Apps Script URL টি লিখে পাঠান:</b>", reply_markup=get_back_keyboard())
 
             elif data == "admin_set_nord_price" and is_admin:
                 set_user_state(user_id, "ADMIN_SET_NORD_PRICE")

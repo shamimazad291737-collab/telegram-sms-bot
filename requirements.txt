@@ -1,7 +1,0 @@
-flask
-requests
-playwright
-pymongo
-dnspython
-pyTelegramBotAPI
-certifi

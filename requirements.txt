@@ -1,3 +1,5 @@
 Flask
 pymongo
 requests
+gspread
+google-auth

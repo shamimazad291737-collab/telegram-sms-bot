@@ -1115,16 +1115,16 @@ def handle_update(update):
                             print(f"Multi-buy preparation error: {e}")
                             return
 
-                        res_msg = f"✅ <b>সফলভাবে {len(purchased_list)} টি নম্বর কেনা হয়েছে!</b>\\n\\n"
+                        res_msg = f"✅ <b>সফলভাবে {len(purchased_list)} টি নম্বর কেনা হয়েছে!</b>\n\n"
                         for idx, (p, l, oid) in enumerate(purchased_list, 1):
                             res_msg += (
                                 f"<b>{idx}.</b> 📱 <code>{html.escape(str(p))}</code> | "
-                                f"🔗 {html.escape(str(l))}\\n"
+                                f"🔗 {html.escape(str(l))}\n"
                             )
 
                         res_msg += (
-                            f"\\n💰 <b>মোট ফি কাটা হবে:</b> "
-                            f"${format_number_price(total_cost)} USD\\n"
+                            f"\n💰 <b>মোট ফি কাটা হবে:</b> "
+                            f"${format_number_price(total_cost)} USD\n"
                             f"👉 যেকোনো একটির ওটিপি পেতে <b>Check OTP</b> বাটনে চাপ দিন।"
                         )
 
